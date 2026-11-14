@@ -68,40 +68,44 @@ test.describe('AC2 — pricing and seat availability', { tag: '@AC2' }, () => {
     expect(errorMessageOf(result.body)).toBe('Only 0 seat(s) available, but 1 requested');
   });
 
-  test('two simultaneous bookings for the last seat: exactly one succeeds', async ({
-    api,
-    resources,
-  }) => {
-    // The docs claim booking is atomic ("seats are decremented in the same
-    // database transaction"). This is the test of that claim. A one-seat event we
-    // own makes it deterministic: whatever the ordering, exactly one request must
-    // win and the other must be told no seats remain.
-    //
-    // No retry and no skip: if this is intermittent, that IS the finding — an
-    // overselling race — and it is reported as an application defect.
-    const event = await resources.createEvent(buildEvent({ totalSeats: 1 }));
+  test(
+    'two simultaneous bookings for the last seat: exactly one succeeds',
+    { tag: '@known-defect' },
+    async ({ api, resources }) => {
+      // The docs claim booking is atomic ("seats are decremented in the same
+      // database transaction"). This is the test of that claim. A one-seat event we
+      // own makes it deterministic: whatever the ordering, exactly one request must
+      // win and the other must be told no seats remain.
+      //
+      // Tagged @known-defect: this assertion is CORRECT and unchanged — exactly
+      // one booking must succeed. The product does not satisfy it (3/6 trials
+      // oversell under load), so the test is routed to its own CI job rather
+      // than gating the pipeline. It is not skipped, weakened or retried.
+      // See docs/adr/0010-known-defect-quarantine.md and api-findings.md §7b.
+      const event = await resources.createEvent(buildEvent({ totalSeats: 1 }));
 
-    const [first, second] = await Promise.all([
-      api.bookings.create(buildBookingPayload({ eventId: event.id, quantity: 1 })),
-      api.bookings.create(buildBookingPayload({ eventId: event.id, quantity: 1 })),
-    ]);
+      const [first, second] = await Promise.all([
+        api.bookings.create(buildBookingPayload({ eventId: event.id, quantity: 1 })),
+        api.bookings.create(buildBookingPayload({ eventId: event.id, quantity: 1 })),
+      ]);
 
-    resources.trackBooking(first);
-    resources.trackBooking(second);
+      resources.trackBooking(first);
+      resources.trackBooking(second);
 
-    const statuses = [first.status, second.status].sort((a, b) => a - b);
-    const created = statuses.filter((status) => status === 201);
+      const statuses = [first.status, second.status].sort((a, b) => a - b);
+      const created = statuses.filter((status) => status === 201);
 
-    expect(
-      created,
-      `exactly one of the two concurrent bookings must succeed; got statuses ${JSON.stringify(statuses)}. ` +
-        'Two 201s would mean the event was oversold.',
-    ).toHaveLength(1);
+      expect(
+        created,
+        `exactly one of the two concurrent bookings must succeed; got statuses ${JSON.stringify(statuses)}. ` +
+          'Two 201s would mean the event was oversold.',
+      ).toHaveLength(1);
 
-    expect(statuses).toEqual([201, 400]);
+      expect(statuses).toEqual([201, 400]);
 
-    // The seat count must reflect one booking, never two.
-    const after = await api.events.getById(event.id);
-    expect(after.data?.availableSeats).toBe(0);
-  });
+      // The seat count must reflect one booking, never two.
+      const after = await api.events.getById(event.id);
+      expect(after.data?.availableSeats).toBe(0);
+    },
+  );
 });

@@ -247,9 +247,31 @@ A decrement is **lost**: after two bookings against one seat `availableSeats` is
 `0`, not `-1` — so the event looks correctly sold out while holding two bookings
 for one seat, and nothing in the data reveals the problem.
 
-The suite's race test (`tests/api/bookings/pricing-and-seats.spec.ts`) detects
-this and **currently fails by design**, because it is reporting a real product
-defect. Full write-up: [`api-findings.md` §7b](docs/api-findings.md).
+### How the suite handles it
+
+The test that detects this (`tests/api/bookings/pricing-and-seats.spec.ts`)
+**still asserts the correct behaviour** — exactly one booking may succeed. It is
+tagged `@known-defect` and runs in its own CI job, so a known product defect
+cannot mask a genuine regression:
+
+| Job                | Runs                                          | Gates?  | Answers                            |
+| ------------------ | --------------------------------------------- | ------- | ---------------------------------- |
+| **UI + API suite** | `playwright test --grep-invert @known-defect` | **Yes** | "Has anything regressed?"          |
+| **Known defects**  | `playwright test --grep @known-defect`        | **No**  | "Does the defect still reproduce?" |
+
+The known-defects job uploads its own report and writes the defect reference,
+severity and per-run result to the job summary.
+
+**Why not `test.fail()`?** Because the defect is **intermittent** (3/6).
+`test.fail()` asserts a test _always_ fails, so on the runs where the race does
+not reproduce Playwright would report an unexpected pass and go red — turning a
+understood defect into a flaky test. Reasoning in
+**[ADR 0010](docs/adr/0010-known-defect-quarantine.md)**.
+
+Nothing is skipped, weakened or retried. A green known-defects job is **not** a
+fix: with an intermittent defect, "did not reproduce" is not evidence of repair.
+
+Full write-up: [`api-findings.md` §7b](docs/api-findings.md).
 
 > **This was nearly missed, and the reason is worth reading.** The same test
 > passed 15/15 earlier in the project. HTTP keep-alive was serialising the two
