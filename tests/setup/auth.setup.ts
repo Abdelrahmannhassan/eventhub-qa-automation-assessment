@@ -25,7 +25,8 @@ setup('resolve configuration and prepare session artifact', async () => {
     baseUrl: config.baseUrl,
     apiBaseUrl: config.apiBaseUrl,
     isCI: config.isCI,
-    hasSharedAccountCredentials: Boolean(config.credentials.email && config.credentials.password),
+    hasAccountA: Boolean(config.accounts.a.email && config.accounts.a.password),
+    hasAccountB: Boolean(config.accounts.b.email && config.accounts.b.password),
   });
 
   await ensureStorageStateFile();

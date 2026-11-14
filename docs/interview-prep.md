@@ -151,8 +151,93 @@ implements against those findings.
 
 ---
 
-## Phase 2+ — to be written
+## Phase 2 — Exploration
 
-Added as each phase completes: observed API contract and discrepancies, story
-review reasoning, layer-selection rationale per scenario, cleanup strategy,
-CI/secret handling.
+### Q: How did you explore the application, and why that way?
+
+Three passes, each answering something the others could not:
+
+1. **The spec, extracted rather than trusted.** There is no `docs-json`
+   endpoint, so the OpenAPI document was pulled out of the Swagger UI bundle and
+   parsed. That gave the _claimed_ contract.
+2. **Scripted HTTP**, unauthenticated and then as two separate accounts. That
+   gave the _real_ contract — and the gap between the two is where most findings
+   came from.
+3. **A headed browser with every API call captured.** That revealed what the UI
+   actually sends versus what the API stores, which no amount of reading either
+   side separately would show.
+
+The two-account design was deliberate: a single account cannot prove isolation.
+Account B existed only to attempt to read and cancel account A's booking.
+
+### Q: What is the single most important thing you found?
+
+That **US-114's central premise is wrong.** The story says _"As a visitor to
+EventHub I want to book tickets"_, but the application has no visitor flow at
+all — `/events` redirects to `/login` and `POST /api/bookings` returns `401`.
+
+This matters because it is not a cosmetic wording issue: it changes who the
+feature is for, and it decides whether AC1 and AC5 describe a defect in the
+product or a defect in the story. That is a Product Owner question, not a
+decision a QA engineer should quietly make — so it was recorded, not assumed.
+
+### Q: You found 27 mismatches. Which would you actually escalate first?
+
+Ranking by consequence, not by count:
+
+1. **M1 — security undeclared on 13 of 14 operations.** Anyone generating a
+   client from this spec gets a client that cannot authenticate. It is the
+   single most expensive documentation defect here.
+2. **S1 — the "visitor" premise.** Blocks a shared understanding of the feature.
+3. **M12 — `customerEmail` is silently rewritten** (Gmail dots and `+suffix`
+   stripped), _and_ inconsistently: `/auth/register` does not do it. A customer
+   could receive tickets at an address they did not type.
+4. **M11 — cancellation hard-deletes** while the schema advertises a `cancelled`
+   status. If a cancellation record is ever needed for audit or refunds, this is
+   a data-loss design, not a reporting gap.
+
+The rest are real but cheaper: type mismatches, undocumented fields, inconsistent
+status codes.
+
+### Q: Why didn't you write tests during exploration?
+
+Because a test written against a guess encodes the guess. Two concrete examples
+from this exploration that a reasonable guess would have got wrong:
+
+- The booking reference is **`H-Z91U0V`**, not the documented `EVT-XXXXXX`.
+- `totalPrice` is the **string** `"5000"`, so `expect(total).toBe(5000)` fails —
+  for the wrong reason, which is the worst kind of failure.
+
+Both would have produced a red test that looked like a product bug.
+
+### Q: How did the findings change your framework design?
+
+Four concrete changes, each traceable to an observation:
+
+- **Auth**: the web app keeps its JWT in `localStorage.eventhub_token`, and the
+  API takes the same token as a bearer header. So one HTTP login can serve both
+  layers — `AuthManager` acquires a token and writes it into Playwright
+  `storageState` as a `localStorage` origin entry. **No browser login anywhere.**
+- **Isolation**: registration needs no email verification, so **per-worker
+  accounts** are viable — real isolation on a shared public environment instead
+  of contention over one login.
+- **Deterministic data**: user-created events are **private to the creating
+  account** (another account gets `404`). Tests can create an event with a known
+  price and seat count, which is what makes AC2 arithmetic and insufficient-seat
+  tests deterministic instead of dependent on whatever seats other candidates
+  left behind.
+- **Contracts**: `price`/`totalPrice` are strings and `customerEmail` is
+  rewritten server-side. Zod schemas model what the API _actually_ returns, and
+  the factory owns the email trap so individual tests cannot fall into it.
+
+### Q: You were testing on a shared public environment. How did you avoid damaging it?
+
+Every booking created during exploration was deleted, and event 284's seat count
+was verified back at its original 2004. Boundary probes were chosen to fail
+validation where possible, so they created nothing. The one bulk operation
+available (`DELETE /bookings`) was exercised once to document it, not relied on.
+
+Worth saying out loud: the environment showed clear signs of other candidates
+working in parallel — event 285's `availableSeats` dropped from 28 while the
+session was running. That is precisely why the framework creates its own events
+rather than asserting against shared inventory.

@@ -84,7 +84,7 @@ layering. Full reasoning for every choice is in **[`docs/adr/`](docs/adr/)**.
 ├── docs/
 │   ├── adr/                      Architecture Decision Records
 │   ├── story-review.md           US-114 review + PO questions        (Phase 3)
-│   ├── api-findings.md           Observed API surface & discrepancies (Phase 2)
+│   ├── api-findings.md           Observed API surface & discrepancies ✅
 │   ├── test-strategy.md          Coverage, priorities, layer choice   (Phase 5)
 │   └── interview-prep.md         Decision defence notes
 │
@@ -222,11 +222,30 @@ typecheck + lint + format; ESLint additionally fails the build on:
 
 ---
 
+## Exploration findings
+
+**[`docs/api-findings.md`](docs/api-findings.md)** — everything observed in Phase 2,
+with evidence. Headlines:
+
+- **Authentication is a 7-day JWT bearer token**, stored by the web app in
+  `localStorage.eventhub_token`. No email verification on registration.
+- **Every endpoint except `/health` and `/config` requires authentication** —
+  including `POST /bookings`. The OpenAPI spec declares security on only _one_ of
+  its 14 operations.
+- **US-114's "As a visitor" premise does not hold**: `/` and `/events` redirect to
+  `/login`, and `POST /api/bookings` returns `401` without a token.
+- **All five acceptance criteria otherwise work**, verified end to end in both the
+  UI and the API, including seat restoration on cancel.
+- **27 mismatches** recorded across docs-vs-API, app-vs-story and UI-vs-API —
+  among them a silent server-side rewrite of `customerEmail`, an undocumented
+  bulk `DELETE /bookings`, prices returned as strings, a booking-reference format
+  that differs from the documented one, and an events page that does not refresh
+  availability after a booking.
+
 ## Story review — US-114
 
-_Pending — Phase 3._ Will document what is missing, unclear or wrong in the user
-story, the questions for the Product Owner, and every discrepancy found between
-the application, the API documentation and the story.
+_Pending — Phase 3._ Will turn the findings above into the story review proper:
+what is missing, unclear or wrong in US-114, and the questions for the Product Owner.
 
 ## Test strategy
 

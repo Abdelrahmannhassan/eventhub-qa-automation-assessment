@@ -32,8 +32,13 @@ const envSchema = z.object({
   TEST_ENV: z.enum(Object.keys(ENVIRONMENT_URLS) as [TestEnvironmentName]).default('production'),
   BASE_URL: z.url().optional(),
   API_BASE_URL: z.url().optional(),
-  TEST_USER_EMAIL: optionalString,
-  TEST_USER_PASSWORD: optionalString,
+  // Two throwaway accounts. Confirmed in Phase 2: registration needs no email
+  // verification, so accounts are cheap and disposable (docs/api-findings.md §1).
+  // Account B exists to prove cross-account isolation, which the API enforces.
+  TEST_USER_A_EMAIL: optionalString,
+  TEST_USER_A_PASSWORD: optionalString,
+  TEST_USER_B_EMAIL: optionalString,
+  TEST_USER_B_PASSWORD: optionalString,
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
 });
 
@@ -65,27 +70,30 @@ export const config = {
   apiBaseUrl: (raw.API_BASE_URL ?? defaults.apiBaseUrl).replace(/\/+$/, ''),
   logLevel: raw.LOG_LEVEL,
   isCI: Boolean(process.env.CI),
-  credentials: {
-    email: raw.TEST_USER_EMAIL,
-    password: raw.TEST_USER_PASSWORD,
+  accounts: {
+    a: { email: raw.TEST_USER_A_EMAIL, password: raw.TEST_USER_A_PASSWORD },
+    b: { email: raw.TEST_USER_B_EMAIL, password: raw.TEST_USER_B_PASSWORD },
   },
 } as const;
+
+export type AccountKey = keyof TestConfig['accounts'];
 
 export type TestConfig = typeof config;
 
 /**
- * Credentials are optional at load time (many suites create their own users),
- * but when a suite genuinely needs the shared account we want an actionable
- * error instead of an unexplained 401 deep inside a request.
+ * Credentials are optional at load time (a suite may register its own account),
+ * but when a test genuinely needs a pre-provisioned account we want an
+ * actionable error instead of an unexplained 401 deep inside a request.
  */
-export function requireSharedAccountCredentials(): { email: string; password: string } {
-  const { email, password } = config.credentials;
+export function requireAccount(which: AccountKey): { email: string; password: string } {
+  const { email, password } = config.accounts[which];
+  const key = which.toUpperCase();
 
   if (!email || !password) {
     throw new Error(
-      'This test requires the shared EventHub account. Set TEST_USER_EMAIL and ' +
-        'TEST_USER_PASSWORD in your .env (locally) or as GitHub Actions secrets (CI). ' +
-        'See .env.example and README.md.',
+      `This test requires EventHub account ${key}. Set TEST_USER_${key}_EMAIL and ` +
+        `TEST_USER_${key}_PASSWORD in your .env (locally) or as GitHub Actions secrets ` +
+        `(CI). See .env.example and README.md.`,
     );
   }
 
