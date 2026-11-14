@@ -19,6 +19,28 @@ import { logger } from '@core/logger';
  */
 const API_REQUEST_TIMEOUT_MS = 30_000;
 
+/**
+ * Headers applied to every API context.
+ *
+ * `Connection: close` disables HTTP keep-alive, so each request opens its own
+ * connection instead of reusing a pooled one.
+ *
+ * Why: the suite's remaining intermittent failure was `ECONNRESET` on the first
+ * API call made *after* a long UI interlude in the same test — the classic
+ * symptom of a pooled connection the server has already dropped. It reproduced
+ * on GitHub's runners as well as locally, so it is not a local-network artifact.
+ * Ruled out beforehand: server health (sequential p50 209-587ms; 12 parallel
+ * reads all 200 in ~1s), concurrency (2 workers fared worse than 7), and a plain
+ * idle gap (a 20s idle context reuses fine when nothing else is in flight).
+ * What the failing case adds is heavy *browser* traffic to the same host during
+ * the gap.
+ *
+ * Removing connection reuse removes the failure mode rather than retrying
+ * through it (ADR 0005). Cost is one TCP+TLS handshake per request — measured at
+ * roughly 400ms, against ~100 API calls in a full run.
+ */
+const NO_CONNECTION_REUSE = { Connection: 'close' } as const;
+
 export interface Session {
   token: string;
   userId: number;
@@ -51,6 +73,7 @@ export class AuthManager {
     const context = await request.newContext({
       baseURL: config.apiBaseUrl,
       timeout: API_REQUEST_TIMEOUT_MS,
+      extraHTTPHeaders: { ...NO_CONNECTION_REUSE },
     });
 
     try {
@@ -90,13 +113,20 @@ export class AuthManager {
     return request.newContext({
       baseURL: config.apiBaseUrl,
       timeout: API_REQUEST_TIMEOUT_MS,
-      extraHTTPHeaders: { Authorization: `Bearer ${session.token}` },
+      extraHTTPHeaders: {
+        Authorization: `Bearer ${session.token}`,
+        ...NO_CONNECTION_REUSE,
+      },
     });
   }
 
   /** An API context with no credentials, for the `401` negative cases. */
   async createAnonymousApiContext(): Promise<APIRequestContext> {
-    return request.newContext({ baseURL: config.apiBaseUrl, timeout: API_REQUEST_TIMEOUT_MS });
+    return request.newContext({
+      baseURL: config.apiBaseUrl,
+      timeout: API_REQUEST_TIMEOUT_MS,
+      extraHTTPHeaders: { ...NO_CONNECTION_REUSE },
+    });
   }
 }
 

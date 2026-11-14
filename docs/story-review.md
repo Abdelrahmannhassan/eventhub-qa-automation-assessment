@@ -21,7 +21,10 @@ observed in the application and its API. Every claim here traces to evidence in
    account, but the customer name/email/phone are free text — so you can book
    using someone else's email and that person can see nothing. "My booking" has
    two readings.
-5. **AC5 points at a broken contract.** "The same works through the API" refers
+5. **The booking endpoint oversells.** Two concurrent bookings for the last seat
+   both succeed, contradicting the documented atomicity — and no AC in US-114
+   says anything about concurrency, so nothing in the story would have caught it.
+6. **AC5 points at a broken contract.** "The same works through the API" refers
    to an OpenAPI document that disagrees with the running API in 15 places —
    including declaring authentication on only 1 of its 14 operations.
 

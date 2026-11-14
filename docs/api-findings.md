@@ -239,6 +239,66 @@ The booking `<form>` carries `novalidate`, so the app owns all validation.
 
 ---
 
+## 7b. CRITICAL — the booking endpoint oversells under concurrent load
+
+**Severity: High.** Found in Phase 7. This is the most serious defect in this
+document, and it directly contradicts the API's own documentation.
+
+`POST /bookings` claims, in the published description:
+
+> Books tickets for an event. The service will: … 5. **Atomically** create the
+> booking and decrement available seats
+
+It does not. Two concurrent bookings for the **last remaining seat** can both
+succeed.
+
+### Reproduction (plain Node `fetch` — no Playwright involved)
+
+Create an event with `totalSeats: 1`, then fire two concurrent
+`POST /bookings` of `quantity: 1`, while the host is also serving other traffic:
+
+```
+trial 1: statuses [201,201]  bookings created=2  availableSeats=0  *** OVERSOLD ***
+trial 2: statuses [201,201]  bookings created=2  availableSeats=0  *** OVERSOLD ***
+trial 3: statuses [201,201]  bookings created=2  availableSeats=0  *** OVERSOLD ***
+trial 4: statuses [201,400]  bookings created=1  availableSeats=0  ok
+trial 5: statuses [201,400]  bookings created=1  availableSeats=0  ok
+trial 6: statuses [201,400]  bookings created=1  availableSeats=0  ok
+
+=> oversold in 3/6 trials under concurrent load
+```
+
+Two details make this worse than a duplicate booking:
+
+- **A decrement is lost.** After two bookings against one seat,
+  `availableSeats` is `0`, not `-1`. So the counter is not merely wrong, it is
+  silently reconciled — the event looks correctly sold out while holding two
+  bookings for one seat. Nothing in the data shows anything is wrong.
+- **It is load-dependent.** With the host idle, 5/5 trials behaved correctly.
+  The race window only opens once the server is handling other requests, which
+  is precisely when real users would hit it.
+
+The signature is a classic read-modify-write race: both requests read
+`availableSeats = 1`, both pass the availability check, both write `0`.
+
+### Why this was nearly missed — and the methodology lesson
+
+The automated test for this passed **15/15** earlier in the project, and that
+result was wrong.
+
+The suite's API requests were reusing HTTP **keep-alive** connections, so two
+"concurrent" requests issued from the same client were serialised onto one
+socket and never actually raced at the server. The test was exercising
+sequential behaviour while claiming to test concurrency.
+
+The defect surfaced only after connection reuse was disabled for an unrelated
+reason (chasing `ECONNRESET` failures), at which point it failed **6/6** in the
+full suite — and reproduced independently with plain `fetch` under load.
+
+The lesson worth carrying: **a concurrency test that passes is not evidence of
+correctness until you have proved the requests were genuinely concurrent.**
+Transport-level pooling can quietly serialise them.
+
 ## 8. Open questions
 
 Recorded rather than guessed. The ones that affect AC interpretation go to the

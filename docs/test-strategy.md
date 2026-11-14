@@ -224,8 +224,17 @@ cause rather than retried:
    too-tight navigation timeout manufactures failures that look like product
    defects. Raised to 45s.
 
-After both fixes: **6/6 consecutive CI-mode runs green**, and the last-seat race
-test passed **15/15** on its own.
+A third fix followed in Phase 7: **connection reuse is disabled on API contexts**
+(`Connection: close`). `ECONNRESET` on the first API call after a UI interlude
+reproduced on GitHub's runners as well as locally — the classic pooled-connection
+symptom. Disabling reuse took transport failures from roughly half of runs to
+**0 in 6 consecutive runs**.
+
+That fix also **invalidated an earlier conclusion of ours.** The last-seat race
+test had passed 15/15, and that was meaningless: keep-alive was serialising the
+two "concurrent" requests onto one socket, so they never raced. With reuse
+disabled the test fails **6/6** — and it is right to. It found a genuine
+overselling defect (`api-findings.md` §7b).
 
 The measurements matter more than the fixes. Timeouts were raised only where we
 had evidence the host was healthy and our own figure was the arbitrary part.

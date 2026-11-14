@@ -230,6 +230,35 @@ typecheck + lint + format; ESLint additionally fails the build on:
 
 ---
 
+## :rotating_light: Headline defect found: the booking endpoint oversells
+
+`POST /bookings` claims to **atomically** decrement seats. It does not. Two
+concurrent bookings for the **last remaining seat** both succeed — reproduced in
+**3/6 trials** under load with plain `fetch`, no test framework involved:
+
+```
+trial 1: statuses [201,201]  bookings created=2  availableSeats=0  *** OVERSOLD ***
+trial 2: statuses [201,201]  bookings created=2  availableSeats=0  *** OVERSOLD ***
+trial 3: statuses [201,201]  bookings created=2  availableSeats=0  *** OVERSOLD ***
+trial 4: statuses [201,400]  bookings created=1  availableSeats=0  ok
+```
+
+A decrement is **lost**: after two bookings against one seat `availableSeats` is
+`0`, not `-1` — so the event looks correctly sold out while holding two bookings
+for one seat, and nothing in the data reveals the problem.
+
+The suite's race test (`tests/api/bookings/pricing-and-seats.spec.ts`) detects
+this and **currently fails by design**, because it is reporting a real product
+defect. Full write-up: [`api-findings.md` §7b](docs/api-findings.md).
+
+> **This was nearly missed, and the reason is worth reading.** The same test
+> passed 15/15 earlier in the project. HTTP keep-alive was serialising the two
+> "concurrent" requests onto one socket, so they never actually raced — the test
+> was exercising sequential behaviour while claiming to test concurrency. It only
+> surfaced after connection reuse was disabled while chasing an unrelated
+> `ECONNRESET`. **A green concurrency test proves nothing until you have proved
+> the requests were genuinely concurrent.**
+
 ## Exploration findings
 
 **[`docs/api-findings.md`](docs/api-findings.md)** — everything observed in Phase 2,
