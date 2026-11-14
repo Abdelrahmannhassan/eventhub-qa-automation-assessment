@@ -53,6 +53,9 @@ export default defineConfig({
 
   use: {
     baseURL: env.baseUrl,
+    // Slow the browser down so a headed run can be followed by eye.
+    // `SLOW_MO=600 npm run test:headed` — 0 (no delay) unless asked for.
+    launchOptions: { slowMo: Number(process.env.SLOW_MO ?? 0) },
     // Deliberately `*-on-failure`, never `on`. Traces and videos contain auth
     // headers, cookies and typed form data, and CI artifacts on a public
     // repository are downloadable. See docs/adr/0007-secrets-in-test-artifacts.md
