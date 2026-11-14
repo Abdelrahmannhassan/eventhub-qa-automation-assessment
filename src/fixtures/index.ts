@@ -1,5 +1,4 @@
 import { test as base, expect } from '@playwright/test';
-import type { APIRequestContext } from '@playwright/test';
 
 import { createApiClients } from '@api/clients';
 import type { ApiClients } from '@api/clients';
@@ -18,12 +17,10 @@ export { ANONYMOUS_STORAGE_STATE } from '@auth/storage-state';
 interface WorkerFixtures {
   /** The account this worker acts as. One sign-in serves every test on the worker. */
   workerSession: Session;
+  /** Session for the foreign account, used only to attempt unauthorized access. */
+  foreignSession: Session;
   /** Path to this worker's storage-state file, consumed by `storageState` below. */
   workerStorageState: string;
-  /** Pre-authenticated API context for the worker's account. */
-  workerApiContext: APIRequestContext;
-  /** Pre-authenticated API context for the foreign account (creates nothing). */
-  foreignApiContext: APIRequestContext;
 }
 
 interface TestFixtures {
@@ -70,21 +67,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     { scope: 'worker' },
   ],
 
-  workerApiContext: [
-    async ({ workerSession }, use) => {
-      const context = await authManager.createApiContext(workerSession);
-      await use(context);
-      await context.dispose();
-    },
-    { scope: 'worker' },
-  ],
-
-  foreignApiContext: [
+  foreignSession: [
     async ({}, use) => {
-      const session = await authManager.signIn(foreignAccount().credentials);
-      const context = await authManager.createApiContext(session);
-      await use(context);
-      await context.dispose();
+      await use(await authManager.signIn(foreignAccount().credentials));
     },
     { scope: 'worker' },
   ],
@@ -102,12 +87,29 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await use(workerStorageState);
   },
 
-  api: async ({ workerApiContext }, use) => {
-    await use(createApiClients(workerApiContext));
+  /**
+   * Request contexts are **test-scoped**, while the sign-in that produces the
+   * token stays worker-scoped. So there is still one login per worker, but no
+   * long-lived HTTP connection.
+   *
+   * This was a root-cause fix, not a preference. A worker-scoped context reuses
+   * keep-alive sockets for the whole worker run, and the server (Apache) closes
+   * idle connections on its own schedule — so a later request would occasionally
+   * reuse a socket the server had already dropped and fail with `ECONNRESET`.
+   * It reproduced in roughly half of CI-mode runs, always on a test late in a
+   * worker's queue. A fresh context per test removes the stale-socket window
+   * instead of retrying through it (ADR 0005).
+   */
+  api: async ({ workerSession }, use) => {
+    const context = await authManager.createApiContext(workerSession);
+    await use(createApiClients(context));
+    await context.dispose();
   },
 
-  foreignApi: async ({ foreignApiContext }, use) => {
-    await use(createApiClients(foreignApiContext));
+  foreignApi: async ({ foreignSession }, use) => {
+    const context = await authManager.createApiContext(foreignSession);
+    await use(createApiClients(context));
+    await context.dispose();
   },
 
   anonymousApi: async ({}, use) => {
@@ -120,7 +122,15 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
    * Cleanup runs here rather than in each test, so a test cannot forget it and
    * cannot leave data behind when it fails mid-way.
    */
-  tracker: async ({}, use, testInfo) => {
+  /**
+   * Depends on `api` deliberately: cleanup callbacks use the API clients, and a
+   * fixture's dependencies are torn down *after* it. That ordering guarantees the
+   * request context is still alive while teardown runs.
+   */
+  // `api` is destructured (and renamed) purely to declare the dependency:
+  // Playwright reads the property name, and a fixture's dependencies are torn
+  // down *after* it, which keeps the request context alive during cleanup.
+  tracker: async ({ api: _api }, use, testInfo) => {
     const tracker = new ResourceTracker();
     await use(tracker);
 

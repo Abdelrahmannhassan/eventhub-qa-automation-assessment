@@ -27,6 +27,15 @@ export class MyBookingsPage extends BasePage {
   /** In-page confirmation dialog; no DELETE is sent until it is accepted. */
   readonly confirmCancelButton = this.page.getByTestId('confirm-dialog-yes');
 
+  /**
+   * The dialog's dismiss control. `exact` matters: "Cancel Booking" on the card
+   * would otherwise match too.
+   */
+  readonly dismissCancelDialogButton = this.page.getByRole('button', {
+    name: 'Cancel',
+    exact: true,
+  });
+
   async cancelBooking(bookingRef: string): Promise<void> {
     await this.cancelButtonFor(bookingRef).click();
     await this.confirmCancelButton.click();

@@ -571,3 +571,88 @@ authenticate" rather than 32 downstream failures that all look like product bugs
 
 I would volunteer this as a design that _changed_ during implementation, because
 the original ADR said otherwise — and the ADR now records why.
+
+---
+
+## Phase 6b — Completing the suite
+
+### Q: Why did you make the clients lenient after arguing for strict schemas?
+
+Because strictness is not a virtue in itself — it is a decision about **who gets
+interrupted when something changes**.
+
+Strict-everywhere proved its worth immediately: it caught an undocumented
+`message` field that my own model of the API had missed. But EventHub is a
+third-party service. If its maintainers add one harmless field to the event
+payload, strict-everywhere means **every flow test that touches an event fails at
+once** — thirty red tests, none of them about a booking defect. The suite would
+be reporting "the API added a field" as though booking were broken.
+
+So each contract now exists in two modes built from **one shared shape**:
+lenient (`z.object`) in the clients, strict (`z.strictObject`) only in
+`tests/api/contracts/`. Flow tests still validate types, formats, the
+`bookingRef` pattern and enum values — they just no longer fail because a _new_
+field appeared. When the API does change shape, exactly one test goes red and
+names the field.
+
+Sharing the shape is the part that makes it safe: there is no way to tighten one
+mode and forget the other.
+
+For an API you own, strict everywhere is reasonable, because you can fix the
+provider. That is the distinction worth drawing.
+
+### Q: You had intermittent failures. What did you do?
+
+Fixed the causes. Neither fix was a retry.
+
+**`ECONNRESET` on API calls**, reproducing in about half of CI-mode runs and
+always on a test late in a worker's queue. The cause was mine: a worker-scoped
+`APIRequestContext` reused keep-alive sockets for the entire worker run, and the
+host closes idle connections on its own schedule — so a later request reused a
+socket the server had already dropped. Request contexts became **test-scoped**
+while the sign-in stayed worker-scoped: still one login per worker, no stale
+sockets.
+
+**`page.goto` timing out at 30s.** Before touching it I measured the host:
+API login p50 381ms / p90 850ms, web HTML p50 209ms, and **zero of 60 sequential
+requests above 3s**. The host was healthy; the arbitrary part was my own 30s
+figure for a full Next.js page load under two concurrent browsers. Raised to 45s.
+
+Result: 6/6 consecutive CI-mode runs green, and the race test 15/15 alone.
+
+The order matters more than the outcome. I measured first, so I could tell the
+difference between "the server is slow" (a finding to report) and "my timeout was
+arbitrary" (a config bug of mine). Raising a timeout without that evidence is
+indistinguishable from hiding a defect.
+
+### Q: The race condition test — what did it tell you?
+
+That the API's atomicity claim holds. A one-seat event we own, two concurrent
+`POST`s, and the assertion that **exactly one** returns `201` and the other is
+told no seats remain. Two `201`s would mean the event was oversold.
+
+It passed 15/15. I deliberately ran it in isolation and repeatedly rather than
+once inside a full suite, because a concurrency test that runs once proves very
+little.
+
+Worth saying plainly: had it been intermittent, that **is** the finding — an
+overselling race — and it would have been reported as an application defect, not
+retried or skipped. A flaky concurrency test is usually a real concurrency bug.
+
+### Q: Why unit-test the logger when everything else is integration?
+
+Because the failure it guards against is **silent**. If redaction breaks, nothing
+goes red — tokens just quietly start appearing in world-readable CI logs. That is
+exactly the kind of regression that needs a test, and it is also the cheapest
+test in the suite: no browser, no network, no session, three milliseconds.
+
+It exists because the leak was real, not hypothetical: a transient `ECONNRESET`
+produced a Playwright error whose message embedded `Authorization: Bearer
+eyJhbGci…`, and my key-based redaction could not see a token held inside a
+string. The test asserts against the exact shape of that message, checks nesting
+in objects, arrays and `Error` instances — and also asserts that **harmless
+context survives**, because redaction that destroys the diagnostic value of a log
+is its own kind of failure.
+
+It also justified a `unit` Playwright project with no `setup` dependency, so it
+runs even when the API is down.

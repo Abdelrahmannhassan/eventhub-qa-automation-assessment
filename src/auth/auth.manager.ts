@@ -6,6 +6,19 @@ import type { Credentials } from '@api/contracts/auth.contract';
 import { config } from '@config/env';
 import { logger } from '@core/logger';
 
+/**
+ * API requests are network calls to a shared third-party server, so they get a
+ * more generous ceiling than UI actions.
+ *
+ * Measured in Phase 6b: login latency is p50 381ms / p90 850ms over 20 samples,
+ * and 60 sequential requests produced nothing above 3s. But a Playwright
+ * `APIRequestContext` request occasionally stalled past the 15s `actionTimeout`
+ * (roughly 1 run in 8). That 15s figure was an arbitrary choice of ours, and a
+ * too-tight timeout manufactures failures that look like product defects. This
+ * raises the ceiling; it does not retry anything (ADR 0005).
+ */
+const API_REQUEST_TIMEOUT_MS = 30_000;
+
 export interface Session {
   token: string;
   userId: number;
@@ -35,7 +48,10 @@ export class AuthManager {
       return cached;
     }
 
-    const context = await request.newContext({ baseURL: config.apiBaseUrl });
+    const context = await request.newContext({
+      baseURL: config.apiBaseUrl,
+      timeout: API_REQUEST_TIMEOUT_MS,
+    });
 
     try {
       const session = await this.login(context, credentials);
@@ -73,13 +89,14 @@ export class AuthManager {
   async createApiContext(session: Session): Promise<APIRequestContext> {
     return request.newContext({
       baseURL: config.apiBaseUrl,
+      timeout: API_REQUEST_TIMEOUT_MS,
       extraHTTPHeaders: { Authorization: `Bearer ${session.token}` },
     });
   }
 
   /** An API context with no credentials, for the `401` negative cases. */
   async createAnonymousApiContext(): Promise<APIRequestContext> {
-    return request.newContext({ baseURL: config.apiBaseUrl });
+    return request.newContext({ baseURL: config.apiBaseUrl, timeout: API_REQUEST_TIMEOUT_MS });
   }
 }
 

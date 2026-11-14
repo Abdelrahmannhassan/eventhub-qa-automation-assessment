@@ -6,7 +6,28 @@ and assumptions are in [`story-review.md`](story-review.md).
 
 ## TL;DR
 
-**31 tests** — 19 API, 9 UI, 3 cross-layer. 8 tagged `@smoke`.
+**38 tests** — 24 API, 8 UI, 3 cross-layer, 3 unit. 8 tagged `@smoke`.
+Plus 2 preflight checks that run before everything.
+
+> The Phase 5 plan was 31 tests (its "19 API / 9 UI" split was an arithmetic slip;
+> the table came to 20 API / 8 UI / 3 cross-layer). Implementation added 7:
+> the **last-seat race** test, **3 contract tests** (strict validation needed its
+> own home once clients went lenient — ADR 0009), and **3 logger-redaction unit
+> tests** guarding a real secret leak found in Phase 6a.
+
+| Tag                   | Tests |
+| --------------------- | ----- |
+| `@AC1`                | 8     |
+| `@AC2`                | 7     |
+| `@AC3`                | 7     |
+| `@AC4`                | 7     |
+| `@AC5`                | 4     |
+| `@smoke`              | 8     |
+| `@characterization`   | 3     |
+| `@contract`           | 3     |
+| `@unit` / `@security` | 3     |
+
+Every acceptance criterion is covered at more than one layer.
 
 Three principles decide everything below:
 
@@ -39,6 +60,7 @@ A distinction worth being explicit about, because it governs what a failure mean
 | **AC tests**                             | The agreed requirement                                                   | A product defect                                  |
 | **Contract tests**                       | Response shape, via Zod schemas                                          | The API changed shape — drift                     |
 | **Characterization** `@characterization` | Behaviour we have **questioned with the PO** and that is not yet settled | The behaviour changed — tell us, so we can re-ask |
+| **Contract** `@contract`                 | The exact response shape, strictly                                       | The API added, removed or retyped a field         |
 
 Characterization tests are **not** a way to make a bug green. They pin behaviour
 that is genuinely under discussion (e.g. is the email rewrite intended?) so that
@@ -183,3 +205,27 @@ count, and cleans up through `ResourceTracker`.
 
 If a test turns out to be genuinely flaky, the fix is the test or a reported
 product defect — never a retry.
+
+### What that cost in practice
+
+Implementation produced two intermittent failures, and both were fixed at the
+cause rather than retried:
+
+1. **`ECONNRESET` on API calls**, reproducing in roughly half of CI-mode runs and
+   always on a test late in a worker's queue. Cause was ours: a worker-scoped
+   `APIRequestContext` reused keep-alive sockets for the whole worker run, and
+   the host closes idle connections on its own schedule. Fix: request contexts
+   are **test-scoped** while the sign-in stays worker-scoped — still one login
+   per worker, but no stale sockets.
+2. **`page.goto` timeouts at 30s.** Measured in isolation the host is fast
+   (HTML p50 209ms, API login p50 381ms, nothing above 3s in 60 sequential
+   requests), but a full Next.js page load under two concurrent browsers
+   occasionally stalled. The 30s figure was our own arbitrary choice, and a
+   too-tight navigation timeout manufactures failures that look like product
+   defects. Raised to 45s.
+
+After both fixes: **6/6 consecutive CI-mode runs green**, and the last-seat race
+test passed **15/15** on its own.
+
+The measurements matter more than the fixes. Timeouts were raised only where we
+had evidence the host was healthy and our own figure was the arbitrary part.

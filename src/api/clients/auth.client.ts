@@ -1,5 +1,16 @@
-import { AuthSuccessSchema, MeSuccessSchema } from '@api/contracts/auth.contract';
-import type { AuthSuccess, Credentials, MeSuccess } from '@api/contracts/auth.contract';
+import {
+  AuthSuccessSchema,
+  ConfigSuccessSchema,
+  HealthSuccessSchema,
+  MeSuccessSchema,
+} from '@api/contracts/auth.contract';
+import type {
+  AuthSuccess,
+  ConfigSuccess,
+  Credentials,
+  HealthSuccess,
+  MeSuccess,
+} from '@api/contracts/auth.contract';
 
 import { BaseApiClient } from './base.client';
 import type { ApiResult } from './base.client';
@@ -20,5 +31,17 @@ export class AuthClient extends BaseApiClient {
   async me(): Promise<ApiResult<MeSuccess>> {
     const response = await this.get('/api/auth/me');
     return this.toResult(response, 200, MeSuccessSchema, (parsed) => parsed);
+  }
+
+  /** One of only two endpoints that work without a token. */
+  async health(): Promise<ApiResult<HealthSuccess>> {
+    const response = await this.get('/api/health');
+    return this.toResult(response, 200, HealthSuccessSchema, (parsed) => parsed);
+  }
+
+  /** The other. Public feature flags. */
+  async config(): Promise<ApiResult<ConfigSuccess>> {
+    const response = await this.get('/api/config');
+    return this.toResult(response, 200, ConfigSuccessSchema, (parsed) => parsed);
   }
 }

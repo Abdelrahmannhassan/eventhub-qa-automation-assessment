@@ -54,7 +54,9 @@ export default tseslint.config(
       'playwright/no-force-option': 'error',
       'playwright/no-conditional-in-test': 'error',
       'playwright/no-conditional-expect': 'error',
-      'playwright/expect-expect': 'error',
+      // Custom assertion helpers must be declared, otherwise the rule reports a
+      // false positive for tests that assert only through them.
+      'playwright/expect-expect': ['error', { assertFunctionNames: ['expectExactShape'] }],
       'playwright/no-useless-await': 'error',
       'playwright/valid-expect': 'error',
     },

@@ -24,7 +24,10 @@ export default defineConfig({
   // polite API consumer and to reduce cross-test data interference.
   workers: env.isCI ? 2 : undefined,
 
-  timeout: 45_000,
+  // Generous enough to absorb one slow API call against a shared third-party
+  // server without masking a genuinely stuck test. See the timeout note in
+  // src/auth/auth.manager.ts.
+  timeout: 60_000,
   expect: { timeout: 10_000 },
 
   outputDir: 'test-results',
@@ -56,8 +59,15 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // UI actions stay tight: an action that cannot complete in 15s is a real
+    // problem. API requests get their own, longer ceiling (auth.manager.ts).
     actionTimeout: 15_000,
-    navigationTimeout: 30_000,
+    // Navigation is the one step that depends on the shared host serving a full
+    // Next.js page — HTML plus every chunk. Measured in isolation the host is
+    // fast (HTML p50 209ms), but under two concurrent browsers a full load
+    // occasionally stalls past 30s. That figure was ours, not a requirement; a
+    // too-tight navigation timeout manufactures failures that look like defects.
+    navigationTimeout: 45_000,
   },
 
   projects: [
@@ -72,6 +82,13 @@ export default defineConfig({
       // the redacting logger and a failure screenshot.
       // See docs/adr/0007-secrets-in-test-artifacts.md
       use: { trace: 'off', video: 'off' },
+    },
+
+    // Pure unit tests: no browser, no network, no session. Deliberately has no
+    // `setup` dependency so it stays fast and runs even if the API is down.
+    {
+      name: 'unit',
+      testMatch: /tests\/unit\/.*\.spec\.ts/,
     },
 
     // API layer: no browser needed, talks to the API base URL.

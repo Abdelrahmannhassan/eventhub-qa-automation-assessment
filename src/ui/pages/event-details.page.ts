@@ -66,4 +66,30 @@ export class EventDetailsPage extends BasePage {
   get lineItem() {
     return this.page.getByText(/^\$[\d,]+ × \d+ tickets?$/);
   }
+
+  /** Validation feedback rendered by the app itself (the form is `novalidate`). */
+  get validationMessages() {
+    return this.page.locator('form').getByText(/must be|required|at least|valid/i);
+  }
+
+  /** Reads the quantity the stepper currently shows. */
+  async currentQuantity(): Promise<number> {
+    return Number(await this.ticketCount.innerText());
+  }
+
+  /** Clicks `−` until the stepper shows `quantity`, never below the UI's floor. */
+  async decreaseQuantityTo(quantity: number): Promise<void> {
+    for (let current = await this.currentQuantity(); current > quantity; current--) {
+      await this.decreaseQuantityButton.click();
+    }
+  }
+
+  /** Clicks `+` until it becomes disabled, returning the quantity reached. */
+  async increaseToMaximum(): Promise<number> {
+    while (await this.increaseQuantityButton.isEnabled()) {
+      await this.increaseQuantityButton.click();
+    }
+
+    return this.currentQuantity();
+  }
 }

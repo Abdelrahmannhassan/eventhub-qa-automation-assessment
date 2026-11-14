@@ -5,11 +5,11 @@ built with **Playwright + TypeScript**.
 
 Scope: user story **US-114 — Book tickets for an event** (AC1–AC5).
 
-> **Status: Phase 6a of 8 — framework built, 3 smoke tests green.**
-> The framework is implemented end to end (Zod contracts, API clients,
-> `AuthManager`, fixtures, factories, Page Objects, cleanup) and proven by three
-> passing smoke tests covering AC1 at the API, AC1 in the UI, and AC5 across both.
-> The remaining 29 tests land in Phase 6b; CI is Phase 7.
+> **Status: Phase 6b of 8 — implementation complete. 40/40 green.**
+> **38 tests** (24 API · 8 UI · 3 cross-layer · 3 unit) plus 2 preflight checks,
+> covering all five acceptance criteria at more than one layer each. Verified over
+> 6 consecutive CI-mode runs with zero failures, zero retries and no leftover data.
+> CI is Phase 7.
 
 ---
 
