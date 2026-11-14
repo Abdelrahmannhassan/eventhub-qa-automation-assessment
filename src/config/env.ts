@@ -28,10 +28,24 @@ const optionalString = z
   .optional()
   .transform((value) => (value === '' ? undefined : value));
 
+/**
+ * An optional URL that treats an empty value as absent.
+ *
+ * This matters in CI: an unreferenced GitHub Actions variable expands to an
+ * **empty string**, not to nothing. A bare `z.url().optional()` would reject
+ * that and fail the whole run on a missing optional override.
+ */
+const optionalUrl = z
+  .string()
+  .trim()
+  .optional()
+  .transform((value) => (value === '' ? undefined : value))
+  .refine((value) => value === undefined || URL.canParse(value), 'must be a valid URL');
+
 const envSchema = z.object({
   TEST_ENV: z.enum(Object.keys(ENVIRONMENT_URLS) as [TestEnvironmentName]).default('production'),
-  BASE_URL: z.url().optional(),
-  API_BASE_URL: z.url().optional(),
+  BASE_URL: optionalUrl,
+  API_BASE_URL: optionalUrl,
   // Two throwaway accounts. Confirmed in Phase 2: registration needs no email
   // verification, so accounts are cheap and disposable (docs/api-findings.md §1).
   // Account B exists to prove cross-account isolation, which the API enforces.

@@ -107,7 +107,9 @@ test.describe('AC1 — create a booking through the API', { tag: '@AC1' }, () =>
   });
 
   test(
-    'a string quantity is accepted and coerced',
+    'DOCUMENTS CURRENT BEHAVIOUR (not a requirement) — a string quantity is accepted ' +
+      'and coerced, contradicting the API\'s own "must be an integer" message. ' +
+      'Defect M14 / open question 14 in docs/story-review.md',
     { tag: '@characterization' },
     async ({ api, resources }) => {
       // Pinned, not endorsed: the API rejects 1.5 with "must be an integer" yet

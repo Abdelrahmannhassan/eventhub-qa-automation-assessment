@@ -51,7 +51,9 @@ test.describe('AC4 — cancel a booking', { tag: '@AC4' }, () => {
   });
 
   test(
-    'a cancelled booking is deleted rather than retained as cancelled',
+    'DOCUMENTS CURRENT BEHAVIOUR (not a requirement) — cancelling hard-deletes the ' +
+      'booking, so the documented status "cancelled" is unreachable and no ' +
+      'cancellation record survives. Defect M11 / open question 4 in docs/story-review.md',
     { tag: '@characterization' },
     async ({ api, resources }) => {
       // Pinned, not endorsed. The API schema advertises status "confirmed |
@@ -75,7 +77,9 @@ test.describe('AC4 — cancel a booking', { tag: '@AC4' }, () => {
   );
 
   test(
-    'cancelling the same booking twice is not idempotent',
+    'DOCUMENTS CURRENT BEHAVIOUR (not a requirement) — cancelling the same booking ' +
+      'twice returns 404 rather than being idempotent. ' +
+      'Defect M11 / open question 4 in docs/story-review.md',
     { tag: '@characterization' },
     async ({ api, resources }) => {
       // Pinned, not endorsed: the second call reports 404 rather than succeeding

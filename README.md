@@ -280,6 +280,27 @@ the PO answers, each with its impact if wrong, plus a suggested rewrite that
 splits the story in two and marks the genuinely open decisions as TBD rather than
 inventing them.
 
+## Tests that document behaviour rather than require it
+
+Three tests are tagged **`@characterization`**. They pin behaviour that is
+**still open with the Product Owner**, so that a silent change is noticed. They
+are **not** a statement that the behaviour is correct, and their names say so.
+
+| Test                                        | What it pins                                                                                                                     | Defect / question                             |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `tests/api/bookings/create-booking.spec.ts` | `quantity: "3"` as a string is accepted and coerced, contradicting the API's own _"must be an integer"_ message                  | **M14** · [question 14](docs/story-review.md) |
+| `tests/api/bookings/cancel-booking.spec.ts` | Cancelling **hard-deletes** the booking, so the documented status `cancelled` is unreachable and no cancellation record survives | **M11** · [question 4](docs/story-review.md)  |
+| `tests/api/bookings/cancel-booking.spec.ts` | Cancelling the same booking twice returns `404` rather than being idempotent                                                     | **M11** · [question 4](docs/story-review.md)  |
+
+Each test name begins with **"DOCUMENTS CURRENT BEHAVIOUR (not a requirement)"**
+and carries its defect reference, so the distinction survives into the Allure
+report where someone reads it out of context.
+
+Two findings deliberately have **no test at all** — past-event bookability and
+the stale seat count on the event page. Asserting them in either direction would
+cement behaviour we believe is wrong, so they stay reported as defects
+([story-review.md §8](docs/story-review.md)) until the PO decides.
+
 ## Test strategy
 
 **[`docs/test-strategy.md`](docs/test-strategy.md)** — the full strategy.

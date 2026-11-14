@@ -9,6 +9,9 @@ export class MyBookingsPage extends BasePage {
 
   async goto(): Promise<void> {
     await this.open('/bookings');
+    // The list is rendered after a client-side fetch, so wait for the page's own
+    // heading before a test asserts on its contents.
+    await this.waitUntilReady(this.heading);
   }
 
   /**

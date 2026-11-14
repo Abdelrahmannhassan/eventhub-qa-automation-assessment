@@ -26,7 +26,7 @@ export class EventDetailsPage extends BasePage {
 
   async goto(eventId: number): Promise<void> {
     await this.open(`/events/${eventId}`);
-    await this.bookingFormHeading.waitFor();
+    await this.waitUntilReady(this.bookingFormHeading);
   }
 
   /** Clicks `+` until the stepper shows `quantity`. Never exceeds the UI's cap. */

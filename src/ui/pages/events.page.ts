@@ -15,6 +15,7 @@ export class EventsPage extends BasePage {
 
   async goto(): Promise<void> {
     await this.open('/events');
+    await this.waitUntilReady(this.heading);
   }
 
   cardFor(title: string): Locator {

@@ -24,6 +24,14 @@ export default tseslint.config(
   js.configs.recommended,
 
   {
+    // CI helper scripts run in plain Node, outside the TypeScript project.
+    files: ['.github/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { console: 'readonly', process: 'readonly' },
+    },
+  },
+
+  {
     files: ['**/*.ts'],
     extends: [...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
