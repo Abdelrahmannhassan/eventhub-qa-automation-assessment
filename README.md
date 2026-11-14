@@ -5,11 +5,10 @@ built with **Playwright + TypeScript**.
 
 Scope: user story **US-114 — Book tickets for an event** (AC1–AC5).
 
-> **Status: Phase 6b of 8 — implementation complete. 40/40 green.**
-> **38 tests** (24 API · 8 UI · 3 cross-layer · 3 unit) plus 2 preflight checks,
-> covering all five acceptance criteria at more than one layer each. Verified over
-> 6 consecutive CI-mode runs with zero failures, zero retries and no leftover data.
-> CI is Phase 7.
+> **Status: complete.** 38 tests (24 API · 8 UI · 3 cross-layer · 3 unit) plus 2
+> preflight checks, covering all five acceptance criteria at more than one layer
+> each. CI green on every push, with a **High-severity overselling defect** found
+> and reported. No retries, no skips, no hardcoded waits.
 
 ---
 
@@ -387,7 +386,114 @@ _Pending — Phase 7._ GitHub Actions on every push, with published reports.
 
 ## Limitations & what I would do with more time
 
-_Pending — Phase 8._
+### Known limitations
+
+**1. Residual intermittent failures against the shared host.** Recent local gate
+runs: **12/14 green**. The two failures were a sign-in failure and an unexpected
+status on an unauthenticated read — both transport-shaped, **never assertion
+logic**. I could not reproduce either with direct HTTP under equivalent load
+(120/120 requests correct, 20/20 unauthenticated reads correctly `401`). Three
+causes were found and fixed properly along the way — stale pooled connections,
+an action-timeout used for page readiness, and an arbitrary navigation timeout —
+but the residue is **not root-caused**, and it is deliberately **not masked with
+retries** (ADR 0005). If this were a service we owned, the next step is HAR
+capture on failure plus correlation IDs matched against the provider's logs.
+
+**2. The overselling defect is open.** It is quarantined and reported on every
+run (ADR 0010), not fixed — that needs a product change.
+
+**3. Thirteen Product Owner questions are unanswered,** so **8 documented
+assumptions** are encoded in the suite. Several tests change if the answers
+differ; each assumption records its blast radius (`story-review.md` §5).
+
+**4. Chromium only.** No WebKit or Firefox, and no mobile viewports. Two config
+entries each — deferred because the booking flow uses no browser-specific APIs.
+
+**5. No accessibility audit.** Duplicate `id` attributes were found incidentally,
+which suggests more. A11y deserves its own `axe` pass, not a side effect of
+functional tests.
+
+**6. No performance or load testing, and no rate-limit probing.** An ethical
+limit, not a technical one: this is a shared practice server other candidates are
+using right now.
+
+**7. Parallelism is capped at 2 workers** by the account pool. Raising it means
+adding an account and a secret (ADR 0008).
+
+**8. Allure history is not persisted,** so the report shows no cross-run trends —
+one of the two reasons Allure was chosen. It needs results carried between runs
+via a `gh-pages` branch or a cache (noted in ADR 0003, not implemented).
+
+**9. CI runs on push to any branch** with no pull-request flow, branch protection
+or required checks.
+
+### What I would do next, in priority order
+
+1. **Root-cause the residual flakiness** — HAR on failure, correlation IDs, and a
+   long soak run to characterise it. Right now I can describe it but not explain
+   it, and that is the single weakest claim in this repository.
+2. **Persist Allure history** to a `gh-pages` branch, unlocking the trend and
+   flakiness view that justified Allure in the first place.
+3. **Answer the PO questions** and convert the 8 assumptions into real
+   assertions — particularly the "visitor" question, which decides whether AC1
+   and AC5 describe defects.
+4. **Accessibility pass** with `axe-core`, starting from the duplicate-id finding.
+5. **Cross-browser and mobile projects**, once there is evidence the risk is real.
+6. **A quarantine budget** — fail CI if the `@known-defect` count grows, so
+   quarantine cannot quietly become a dumping ground.
+7. **Snapshot-based contract tests** so API drift is detectable even when the
+   live service is unavailable.
+8. **Shard CI across runners** once the account pool is large enough to make it
+   worthwhile.
+
+### What I would change about my own approach
+
+Two things, honestly:
+
+- **I trusted a green concurrency test.** The race test passed 15/15 and I
+  reported atomicity as holding. It was being serialised by HTTP keep-alive and
+  never raced at all. I should have proved the requests were concurrent _before_
+  believing the result — the defect it hides is the most serious finding here.
+- **I tuned two timeouts before fully measuring.** They were defensible changes
+  and I measured the host first, but with hindsight I would have captured a HAR
+  on the first failure rather than adjusting ceilings and re-running.
+
+## Submission checklist
+
+What the brief asked for, and where it is:
+
+| Required                                                 | Where                                                                                                                                          |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Review the story; note what is missing, unclear or wrong | [`docs/story-review.md`](docs/story-review.md) — 2 wrong, 17 missing, 6 unclear, 3 of 5 ACs untestable as written                              |
+| Questions for the Product Owner                          | `story-review.md` §4 — 13, prioritised                                                                                                         |
+| Discrepancies between app, API docs and story            | [`docs/api-findings.md`](docs/api-findings.md) §7 — 15 docs-vs-API, 7 app-vs-story, 6 UI-vs-API                                                |
+| UI and API automation                                    | 38 tests: 24 API, 8 UI, 3 cross-layer, 3 unit                                                                                                  |
+| A framework that can grow                                | [`docs/architecture.md`](docs/architecture.md) + 10 ADRs                                                                                       |
+| Authorization handled by the framework                   | [ADR 0004](docs/adr/0004-centralised-authorization.md) — one HTTP sign-in per worker, no test and no browser logs in                           |
+| GitHub Actions on every push                             | [`.github/workflows/ci.yml`](.github/workflows/ci.yml)                                                                                         |
+| Test report available                                    | Playwright HTML + Allure single-file + JUnit, uploaded on every run (7-day retention)                                                          |
+| A completed run visible in the Actions tab               | [Actions](../../actions)                                                                                                                       |
+| Configuration and secrets explained                      | README "Configuration & secrets" + [ADR 0006](docs/adr/0006-configuration-and-secrets.md) / [0007](docs/adr/0007-secrets-in-test-artifacts.md) |
+| Credentials needed to run the tests                      | See "Credentials for reviewers" below                                                                                                          |
+| Key decisions explained                                  | 10 ADRs, each with alternatives and consequences                                                                                               |
+| What I would do with more time                           | The section above                                                                                                                              |
+
+## Credentials for reviewers
+
+The suite needs three throwaway EventHub accounts. They are **not** in this
+repository (ADR 0006), and they are already configured as GitHub Actions secrets,
+so **CI runs without any setup**.
+
+To run locally, either:
+
+- **Use your own accounts** — register three at
+  [eventhub.rahulshettyacademy.com/register](https://eventhub.rahulshettyacademy.com/register),
+  then `cp .env.example .env` and fill in the six values. No email verification
+  is required, so this takes about a minute.
+- **Or ask me for the credentials** for the three accounts the CI runs use. They
+  are disposable, hold no real personal data, and are rotatable by changing one
+  secret — sharing them out of band is deliberate rather than committing them
+  (ADR 0007).
 
 ---
 

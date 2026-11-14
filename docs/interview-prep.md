@@ -656,3 +656,90 @@ is its own kind of failure.
 
 It also justified a `unit` Playwright project with no `setup` dependency, so it
 runs even when the API is down.
+
+---
+
+## Phase 7/8 — The defect, the quarantine, and what I would change
+
+### Q: Talk me through the most serious thing you found.
+
+`POST /bookings` oversells. Two concurrent bookings for the **last seat** both
+return `201`, and the lost decrement leaves `availableSeats` at `0` rather than
+`-1` — so the event looks correctly sold out while holding two bookings for one
+seat. Nothing in the data reveals it. Reproduced in 3 of 6 trials under load with
+plain `fetch`, no test framework involved. The documentation explicitly claims
+the opposite: _"Atomically create the booking and decrement available seats."_
+
+It is load-dependent: against an idle host, 5/5 trials behaved correctly. The
+race window only opens when the server is serving other traffic — which is
+exactly when real users would hit it.
+
+### Q: And you nearly missed it. What happened?
+
+This is the part I would lead with, because the methodology error is more
+interesting than the bug.
+
+The test passed **15/15** and I reported atomicity as holding. It was wrong. The
+suite's API requests were reusing HTTP **keep-alive** connections, so the two
+"concurrent" requests were serialised onto a single socket and never raced at the
+server. The test was exercising sequential behaviour while claiming to test
+concurrency.
+
+It surfaced only because I disabled connection reuse for an unrelated reason —
+chasing `ECONNRESET` failures — and then it failed 6/6 immediately.
+
+The lesson: **a green concurrency test proves nothing until you have proved the
+requests were genuinely concurrent.** Transport-level pooling will quietly
+serialise them, and nothing in the test output tells you.
+
+### Q: How did you handle a known defect in CI without hiding it?
+
+The constraint is that one pipeline status cannot answer two different questions.
+"Has anything regressed?" has to stay answerable — which a permanently red gate
+cannot do. "Is the known defect still there?" deserves an answer on every run —
+which deleting or skipping the test destroys.
+
+So the test keeps its **correct, unchanged assertion**, is tagged
+`@known-defect`, and the jobs split: the gate runs `--grep-invert @known-defect`,
+and a second job runs only the quarantined tests with `continue-on-error`,
+uploading its own report and writing the defect reference and per-run result to
+the job summary.
+
+**The detail worth volunteering is why not `test.fail()`.** That is the obvious
+answer and it is wrong here: `test.fail()` asserts a test _always_ fails, and
+this defect is **intermittent**. On the roughly half of runs where the race does
+not reproduce, Playwright reports an _unexpected pass_ and the run goes red. The
+annotation would convert an understood defect into a flaky test — the exact
+failure mode the project refuses everywhere else.
+
+I also made the second job `needs:` the first, which looks like an ordering
+nicety but is not: both jobs act as the same pooled accounts, so running them in
+parallel would reintroduce the interference the workflow-level concurrency lock
+prevents between runs.
+
+### Q: What is the weakest part of your submission?
+
+The residual flakiness. Recent local gate runs are 12/14 green, and the two
+failures were transport-shaped, never assertion logic. I found and properly fixed
+three causes — stale pooled connections, an action timeout misapplied to page
+readiness, and an arbitrary navigation ceiling — but **I did not root-cause the
+remainder**, and I could not reproduce it with direct HTTP under equivalent load
+(120/120 requests correct).
+
+I would rather say that plainly than claim a stability I have not demonstrated.
+The next step is a HAR capture on failure plus correlation IDs matched against
+the provider's logs — and with hindsight I should have done that on the _first_
+failure instead of adjusting two timeouts and re-running.
+
+### Q: If you started again, what would you do differently?
+
+Three things:
+
+1. **Prove concurrency before trusting a concurrency test.** This cost me a wrong
+   conclusion on the most serious defect in the product.
+2. **Capture evidence before tuning.** Both timeout changes were defensible and I
+   measured the host first, but a HAR from the first failure would have been
+   worth more than two config changes.
+3. **Ask the "visitor" question earlier.** It is the single decision that most
+   changes the shape of the suite, and it was answerable on day one from a single
+   `401`.
