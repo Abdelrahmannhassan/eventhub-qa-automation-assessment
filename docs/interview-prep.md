@@ -324,3 +324,74 @@ marked **TBD with a question reference** instead of being invented.
 
 Marking something TBD in a story is honest. Silently inventing it is how a test
 suite ends up enforcing a rule nobody agreed to.
+
+---
+
+## Phase 4 — Architecture design
+
+### Q: Walk me through how authorization works, concretely.
+
+A single HTTP login serves both layers, and no test — and no browser — ever logs in.
+
+The `setup` project runs once per execution and calls `POST /auth/login`
+directly over HTTP. The JWT it returns goes two places: into a Playwright
+`storageState` file as a `localStorage` entry under `eventhub_token`, which UI
+projects consume declaratively via `use.storageState`; and into an
+`APIRequestContext` created with `extraHTTPHeaders.Authorization`, which API
+tests receive from a fixture.
+
+The reason this is so clean is a Phase 2 observation, not a design preference:
+the web app stores its token in `localStorage.eventhub_token` and the API accepts
+the same token as a bearer header. **One credential, two transports.** Had the app
+used an HttpOnly cookie session, this would have needed a real browser login in
+the setup project.
+
+Tests that must be anonymous opt out visibly with
+`test.use({ storageState: ANONYMOUS_STORAGE_STATE })` — that is what keeps the
+`401` negative cases honest instead of accidentally authenticated.
+
+### Q: Why a fixed pool of accounts instead of registering fresh ones per run?
+
+This is the decision I would most want to be asked about, because the textbook
+answer is the wrong one here.
+
+The textbook answer is "always create fresh data" — and it is right **when you
+can delete what you create**. On EventHub you cannot: registration is free and
+instant, but **there is no endpoint to delete an account**. So "a fresh account
+per worker per run" quietly means "permanent orphan accounts on a server we do
+not own", multiplying by every push, every worker, for years. On a shared public
+environment where the brief explicitly asks us to clean up, that is the opposite
+of good citizenship.
+
+So the deciding factor is not isolation theory — both options isolate fine — it
+is **cleanup asymmetry**. A fixed pool creates nothing per run.
+
+The pool's weaknesses are all mitigable by test design we want regardless:
+leftover state is handled by `ResourceTracker` plus each test creating its own
+event; concurrent runs sharing an account are handled by **presence-based
+assertions** ("my reference is in the list", never "the list has one item"),
+which is correct practice on any shared environment anyway.
+
+One detail worth volunteering: the pool separates a **"foreign" account** used
+only to attempt unauthorized reads and cancels. It creates nothing, so every
+worker can share it safely. Without that split, the cross-account authorization
+test would have to borrow another worker's account — reintroducing exactly the
+interference the pool exists to prevent.
+
+And option (a) stays as a documented opt-in fallback, so a contributor without
+secrets can still run the suite — just never by accident.
+
+### Q: How do you keep AC2's arithmetic from being flaky?
+
+By not asserting against inventory we do not control. During exploration, event
+285's available seats dropped from 28 while we were working, because other
+candidates were booking against the same shared events.
+
+`POST /events` creates an event that is **private to the creating account** —
+another account gets `404` — with a price and seat count we choose. So any test
+that depends on price or seat count creates its own event first. That makes AC2's
+multiplication and the insufficient-seat boundary deterministic, instead of
+dependent on whatever seats are left that minute.
+
+Shared static events are still used, but only for read-only browsing tests where
+inventory does not matter.

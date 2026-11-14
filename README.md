@@ -53,7 +53,9 @@ No Java required: reporting uses **Allure Report 3**, which is pure Node
 ## Architecture
 
 One framework, two layers, separated by Playwright projects and by source
-layering. Full reasoning for every choice is in **[`docs/adr/`](docs/adr/)**.
+layering. The layer map and auth-flow diagram are in
+**[`docs/architecture.md`](docs/architecture.md)**; the reasoning behind every
+choice is in **[`docs/adr/`](docs/adr/)**.
 
 ```
 ├── playwright.config.ts          Projects, reporters, timeouts, auth wiring
@@ -83,6 +85,7 @@ layering. Full reasoning for every choice is in **[`docs/adr/`](docs/adr/)**.
 │
 ├── docs/
 │   ├── adr/                      Architecture Decision Records
+│   ├── architecture.md           Layer map + auth flow diagram        ✅
 │   ├── story-review.md           US-114 review + PO questions        ✅
 │   ├── api-findings.md           Observed API surface & discrepancies ✅
 │   ├── test-strategy.md          Coverage, priorities, layer choice   (Phase 5)

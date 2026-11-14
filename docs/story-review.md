@@ -4,6 +4,32 @@ Review of the user story as handed to the team, based on what Phase 2 actually
 observed in the application and its API. Every claim here traces to evidence in
 **[`docs/api-findings.md`](api-findings.md)**.
 
+## TL;DR — the five things that matter
+
+1. **The actor is wrong.** The story is written for a "visitor", but there is no
+   visitor flow: `/events` redirects to `/login` and `POST /api/bookings` returns
+   `401`. The story has no login or registration step either, so as written it
+   cannot be built. **This decides whether AC1/AC5 are product defects or story
+   defects** — opposite test suites — so it is a PO call, not ours.
+2. **All five ACs pass, yet three of five are not testable as written.** The
+   product is largely fine; the specification is not. A suite built literally
+   from this story would pass while verifying almost nothing.
+3. **Payment does not exist** — not in the form, not in `POST /bookings`. Either
+   reserve-now-pay-later is intended, or the most important part of buying a
+   ticket is missing from both story and product. Nobody wrote down which.
+4. **Who owns a booking is ambiguous.** The booking belongs to the signed-in
+   account, but the customer name/email/phone are free text — so you can book
+   using someone else's email and that person can see nothing. "My booking" has
+   two readings.
+5. **AC5 points at a broken contract.** "The same works through the API" refers
+   to an OpenAPI document that disagrees with the running API in 15 places —
+   including declaring authentication on only 1 of its 14 operations.
+
+**Also:** 17 missing requirements, 13 PO questions, 8 written assumptions (each
+with its impact if wrong), a suggested rewrite, and 9 defects to raise.
+
+---
+
 ## The story as given
 
 > **US-114: Book tickets for an event**
