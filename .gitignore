@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Environment & secrets  (never commit real values — only .env.example is tracked)
+.env
+.env.*
+!.env.example
+
+# Authenticated session artifacts produced by the auth setup project
+.auth/
+
+# Playwright outputs
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Allure outputs
+allure-results/
+allure-report/
+.allure/
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Assessment brief. This is the hiring team's own document; republishing it on a
+# public repository would expose their material to future candidates. Kept local.
+QA-Practical-Assessment*.pdf
