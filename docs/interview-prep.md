@@ -395,3 +395,97 @@ dependent on whatever seats are left that minute.
 
 Shared static events are still used, but only for read-only browsing tests where
 inventory does not matter.
+
+---
+
+## Phase 5 — Test strategy
+
+### Q: Only 31 tests. Isn't that thin for a booking flow?
+
+The suite is sized by **distinct risk**, not by permutations.
+
+Every API validation rule is covered once, at its boundary. Every piece of UI
+behaviour is covered once, in the browser. Authorization is covered from the one
+angle that matters — a non-owner attempting access. Nothing is tested twice at
+two layers, except the three AC5 parity tests, where the duplication _is_ the
+requirement.
+
+What a bigger number would buy is more inputs through the same code path. The
+second malformed email exercises the same validator as the first: cost without
+coverage. On a shared public server it is also extra load on other people's work.
+
+The number I would defend changing is coverage of things we _chose_ to defer —
+the last-seat race, cross-browser, accessibility — not more validation
+permutations.
+
+### Q: How did you decide what goes in the UI versus the API?
+
+One question: **what is the cheapest layer that can actually prove this rule?**
+
+Validation boundaries, authorization, status codes and response shapes go to the
+API — fast, precise, and the failure message names the offending field. A UI test
+proving `quantity: 0` is rejected tells you less and costs roughly twenty times
+as much.
+
+The UI gets what only a browser can prove: the quantity stepper disabling at its
+bounds, the price breakdown rendering, the confirmation panel appearing with a
+reference, the bookings list, the cancel dialog. An API test cannot prove a user
+_saw_ a booking reference.
+
+The deliberate asymmetry: the API runs the full validation matrix, the UI runs
+**one** representative failure. That single test proves the UI surfaces errors at
+all; re-running every boundary through the browser would add runtime, not
+information.
+
+And arrange/cleanup always goes through the API, even for UI tests — driving
+twenty UI steps to reach the screen under test produces a slow test that fails
+for reasons unrelated to its purpose.
+
+### Q: You have tests that assert current behaviour you called a defect. Isn't that cementing bugs?
+
+This is the distinction I would most want to draw, because it looks like that
+from the outside.
+
+There are three kinds of test, and a failure in each means something different:
+**AC tests** (failure = product defect), **contract tests** (failure = API shape
+drift), and **`@characterization`** tests.
+
+Characterization tests pin behaviour that is **genuinely open with the Product
+Owner** — is the Gmail email rewrite intended? Should a cancelled booking be
+retained? They exist so that a _silent change_ gets noticed, and each links to
+its open question. They are not an assertion that the behaviour is correct.
+
+The honest proof that this is not bug-laundering: **two findings get no test at
+all.** Past-event bookability and the stale seat count are behaviours I believe
+are wrong, so I refused to encode them either way — asserting them would cement
+them. They are reported as defects, and they get automated once the PO decides
+which direction is correct.
+
+### Q: What is the single most valuable test in the suite?
+
+Test 21: **the foreign account cannot cancel my booking.**
+
+It is the one test that would catch a real authorization regression, and
+authorization regressions are the failures that actually hurt users. It also
+needs two accounts simultaneously, which is why the account pool reserves a
+dedicated "foreign" account that creates nothing (ADR 0008) — a single-account
+suite simply cannot write this test.
+
+Worth noting it currently passes for a slightly wrong reason: the API returns
+`404` rather than `403` for a non-owner delete. The protection is real; the
+status code is inconsistent with the `403` that a non-owner _read_ returns. The
+test asserts the behaviour that matters — the booking survives — and the
+inconsistency is filed as a separate low-severity defect.
+
+### Q: Why aren't you load-testing or probing rate limits?
+
+Because it is someone else's server. EventHub is a shared public practice
+environment with other candidates working on it right now — we watched event
+285's seat count drop mid-session.
+
+That is an ethical limit, not a technical one, and it is worth stating plainly in
+an interview: I can describe how I _would_ load-test it in a dedicated
+environment, but doing it here would degrade other people's work.
+
+The same reasoning kept rate-limit probing out of Phase 2, and it is why CI caps
+itself at 2 workers.

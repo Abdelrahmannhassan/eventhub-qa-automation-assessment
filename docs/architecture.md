@@ -129,6 +129,11 @@ Bookings and user-created events are both deletable, so the data that matters is
 fully reversible. Accounts are **not** deletable — which is the decisive factor
 in ADR 0008.
 
+Routine teardown removes resources **one by one** (`DELETE /bookings/{id}`). The
+bulk `DELETE /bookings` endpoint deletes every booking on the account, so it is
+reserved for deliberate manual recovery — and Phase 7 serialises CI runs with a
+`concurrency` group so two runs can never share a pooled account (ADR 0008).
+
 ## Deliberately not built
 
 Naming the rejections is part of the design: no custom reporter, no BDD/Cucumber

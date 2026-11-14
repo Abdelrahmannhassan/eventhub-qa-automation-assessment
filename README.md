@@ -88,7 +88,7 @@ choice is in **[`docs/adr/`](docs/adr/)**.
 │   ├── architecture.md           Layer map + auth flow diagram        ✅
 │   ├── story-review.md           US-114 review + PO questions        ✅
 │   ├── api-findings.md           Observed API surface & discrepancies ✅
-│   ├── test-strategy.md          Coverage, priorities, layer choice   (Phase 5)
+│   ├── test-strategy.md          Coverage, priorities, layer choice   ✅
 │   └── interview-prep.md         Decision defence notes
 │
 └── .github/workflows/            CI pipeline                          (Phase 7)
@@ -277,8 +277,32 @@ inventing them.
 
 ## Test strategy
 
-_Pending — Phase 5._ Will document what is covered at which layer and why,
-positive/negative/edge scenarios, and priorities.
+**[`docs/test-strategy.md`](docs/test-strategy.md)** — the full strategy.
+**31 tests: 19 API, 9 UI, 3 cross-layer; 8 tagged `@smoke`.**
+
+Three principles decide the whole shape:
+
+1. **Test a rule once, at the cheapest layer that can prove it.** Validation
+   boundaries live at the API; the UI gets one representative case to prove it
+   surfaces errors at all.
+2. **Use the UI only for what only a browser can prove** — the stepper, the price
+   breakdown, the confirmation panel, the bookings list, the cancel dialog.
+3. **Never assert against data we do not own.** Every price- or seat-dependent
+   test creates its own event first, because the shared static events lose seats
+   to other candidates mid-run.
+
+Tests come in three kinds, because a failure must mean something specific: **AC
+tests** (failure = product defect), **contract tests** (failure = API shape
+drift), and **`@characterization`** tests that pin behaviour still open with the
+PO so a silent change gets noticed. Characterization tests are not a way to make
+a bug green — each links to its open question.
+
+Two findings get **no test at all** — past-event bookability and the stale seat
+count. Asserting them would cement behaviour we believe is wrong; they are
+reported as defects instead.
+
+Every test is tagged `@AC1`…`@AC5`, so the Allure report answers _"is AC2
+covered?"_ directly — the traceability that justified Allure (ADR 0003).
 
 ## CI/CD
 

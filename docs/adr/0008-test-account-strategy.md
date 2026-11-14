@@ -41,12 +41,45 @@ The deciding argument is asymmetry of harm. Option (b)'s weaknesses are
 
 How (b)'s drawbacks are handled:
 
-| Drawback                           | Mitigation                                                                                                                                                                                                                                          |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Leftover state between runs        | Every test creates its own event and registers every resource with `ResourceTracker`; teardown removes them. `DELETE /bookings` (bulk) exists as a documented fallback.                                                                             |
-| Concurrent runs sharing an account | **Presence-based assertions only** — assert "my booking reference is in the list", never "the list has one item". This is correct practice on any shared environment, so it costs nothing. Each test's own event keeps seat arithmetic independent. |
-| Pool caps parallelism              | Pool is sized to the CI worker cap (2) and assigned by Playwright's worker index. Raising concurrency means adding an account and a secret — a known, cheap step.                                                                                   |
-| Contributor onboarding friction    | Option (a) stays available as an explicit, documented **fallback mode** for contributors without secrets. It is opt-in, never the default, so nobody litters by accident.                                                                           |
+| Drawback                           | Mitigation                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Leftover state between runs        | Every test creates its own event and registers every resource with `ResourceTracker`; teardown removes them. `DELETE /bookings` (bulk) exists as a documented fallback.                                                                                                                                                     |
+| Concurrent runs sharing an account | **Presence-based assertions only** — assert "my booking reference is in the list", never "the list has one item". This is correct practice on any shared environment, so it costs nothing. Each test's own event keeps seat arithmetic independent. Reads are therefore safe; the **bulk** cleanup path is not — see below. |
+| Pool caps parallelism              | Pool is sized to the CI worker cap (2) and assigned by Playwright's worker index. Raising concurrency means adding an account and a secret — a known, cheap step.                                                                                                                                                           |
+| **Two CI runs sharing the pool**   | A **GitHub Actions `concurrency` group** serialises runs so only one holds the pool at a time. See below — this is required, not optional.                                                                                                                                                                                  |
+| Contributor onboarding friction    | Option (a) stays available as an explicit, documented **fallback mode** for contributors without secrets. It is opt-in, never the default, so nobody litters by accident.                                                                                                                                                   |
+
+### Required: serialise CI runs that use the pool
+
+Per-test cleanup and presence-based assertions make concurrent _reads_ harmless,
+but they do not make the **bulk fallback** safe. `DELETE /bookings` is
+account-scoped and removes **every** booking on that account — so if two runs
+share a pooled account, one run's bulk cleanup silently destroys the other run's
+bookings mid-flight. The victim then fails with assertions that look exactly like
+product defects.
+
+Phase 7 therefore adds to the workflow:
+
+```yaml
+concurrency:
+  group: eventhub-shared-account-pool
+  cancel-in-progress: false
+```
+
+Two details matter:
+
+- **The group key is a constant** — no `github.ref` or `github.sha` in it. The
+  account pool is a single global resource, so the lock must be global across
+  every branch, pull request and manual dispatch. A per-ref group would not
+  serialise anything.
+- **`cancel-in-progress: false`.** Cancelling a run mid-flight is worse than
+  queueing it: the run dies between creating bookings and tearing them down,
+  leaving exactly the litter this ADR exists to prevent. Queue, never cancel.
+
+Cost: pushes queue instead of running in parallel. At this suite size that is
+seconds, and it is the honest price of a shared environment. If the suite ever
+grows enough for queueing to hurt, the fix is more pooled accounts plus per-run
+account _assignment_ — not removing the lock.
 
 ### Pool shape
 
@@ -68,8 +101,15 @@ Good: a fixed, tiny footprint on a shared environment; failures are reproducible
 against a known account; assertion style that is robust to concurrent runs.
 
 Bad / accepted: secrets must exist before CI can run (Phase 7), local onboarding
-needs either the secrets or the fallback mode, and raising worker count is a
-deliberate two-step change rather than automatic.
+needs either the secrets or the fallback mode, raising worker count is a
+deliberate two-step change rather than automatic, and **CI runs serialise** —
+pushes queue rather than running in parallel.
+
+One residual risk stays open: the `concurrency` group serialises _CI_ runs, but
+cannot stop a developer running the suite locally against the same pooled account
+at the same moment. Mitigation is that routine teardown deletes resources **one
+by one** (`DELETE /bookings/{id}` per tracked booking); the bulk endpoint is
+reserved for deliberate manual recovery, never routine cleanup.
 
 **Interview note:** the useful framing is that the usual textbook answer is (a) —
 "always create fresh data" — and it is the right answer _when you can delete what
