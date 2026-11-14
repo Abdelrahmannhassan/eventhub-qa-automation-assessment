@@ -13,9 +13,11 @@ const log = logger.child('setup');
  *  1. Fail fast on invalid configuration — importing `config` validates it.
  *  2. Produce the storage-state artifact that authenticated UI projects consume.
  *
- * PHASE 2 will add the real session acquisition here (register/login against the
- * actual application). It is intentionally NOT implemented yet: the authentication
- * mechanism has not been explored, and inventing endpoints would be guesswork.
+ * TODO(Phase 4): real session acquisition goes here (register/login against the
+ * actual application via AuthManager). The current session artifact is a
+ * TEMPORARY anonymous placeholder. It is intentionally not implemented yet: the
+ * authentication mechanism is observed in Phase 2, and inventing endpoints
+ * before that would be guesswork (CLAUDE.md §1).
  */
 setup('resolve configuration and prepare session artifact', async () => {
   log.info('Resolved test configuration', {

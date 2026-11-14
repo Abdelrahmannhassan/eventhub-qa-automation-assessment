@@ -1,7 +1,13 @@
 # ADR 0004 — Authorization is owned by the framework, never by a test
 
-**Status:** Accepted as a design (Phase 1). Implementation lands in Phase 2,
-once the real authentication mechanism has been observed.
+**Status:** Accepted as a design (Phase 1). Implementation lands in **Phase 4**,
+once Phase 2 has observed the real authentication mechanism.
+
+> **The session artifact shipped in Phase 1 is a TEMPORARY anonymous
+> placeholder** (`TODO(Phase 4)` in `src/auth/storage-state.ts` and
+> `tests/setup/auth.setup.ts`). It exists only so the suite runs end to end
+> before the auth mechanism is known, and is replaced by a real
+> `AuthManager`-produced session in Phase 4.
 
 ## Context
 
@@ -33,6 +39,8 @@ _result_.
 
 Credentials reach `AuthManager` only through the validated config object
 (ADR 0006), and the logger redacts tokens and passwords (`src/core/logger.ts`).
+The accounts themselves are disposable and uniquely credentialled, because the
+session they produce can surface in test artifacts (ADR 0007).
 
 ## Alternatives considered
 
@@ -62,7 +70,7 @@ known); and the `setup` project becomes a single point of failure for the whole
 suite — acceptable, because that is precisely where such a failure _should_
 surface.
 
-## Open questions for Phase 2
+## Open questions answered in Phase 2
 
 - Is authentication cookie/session-based, JWT bearer, or both?
 - Does registration require email verification? (If so, per-worker accounts are

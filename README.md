@@ -17,8 +17,8 @@ Scope: user story **US-114 — Book tickets for an event** (AC1–AC5).
 ## Quick start
 
 ```bash
-# Requirements: Node.js >= 20  (developed on v22.14.0)
-npm install
+# Node.js 22.14.0 — see .nvmrc.   nvm use
+npm ci                          # NOT `npm install` — see Reproducible installs
 npx playwright install chromium
 
 cp .env.example .env            # then fill in values — see Configuration below
@@ -26,6 +26,9 @@ cp .env.example .env            # then fill in values — see Configuration belo
 npm run verify                  # typecheck + lint + format check
 npm test                        # run every project
 ```
+
+No Java required: reporting uses **Allure Report 3**, which is pure Node
+([ADR 0003](docs/adr/0003-reporting-stack.md)).
 
 ### Useful commands
 
@@ -124,9 +127,11 @@ this explicitly). Design and trade-offs: **[ADR 0004](docs/adr/0004-centralised-
 5. A test that must be anonymous opts out visibly with
    `test.use({ storageState: ANONYMOUS_STORAGE_STATE })`.
 
-_Phase 1 ships the wiring and an anonymous placeholder session. Real session
-acquisition lands in Phase 2, once the actual authentication mechanism has been
-observed rather than assumed._
+> **Phase 1 ships the wiring plus a TEMPORARY anonymous placeholder session**
+> (marked `TODO(Phase 4)` in `src/auth/storage-state.ts` and
+> `tests/setup/auth.setup.ts`). It exists only so the suite runs end to end
+> before the auth mechanism is known. Phase 2 observes the real mechanism;
+> Phase 4 replaces the placeholder with a genuine `AuthManager` session.
 
 ---
 
@@ -162,6 +167,39 @@ with actionable instructions via `requireSharedAccountCredentials()`.
 **In CI:** _Pending — Phase 7._ Non-sensitive values (base URLs) will be GitHub
 Actions **variables**; credentials will be **secrets**, injected as environment
 variables for the test step only and never echoed.
+
+### Reproducible installs
+
+The dependency tree must be identical on a laptop and in CI, or a green pipeline
+proves nothing about the code it ran against.
+
+- `package-lock.json` is **committed**.
+- `.npmrc` sets **`save-exact=true`**, so a new dependency is pinned to an exact
+  version instead of a `^` range. All 13 current dependencies are exact pins.
+- `.nvmrc` pins **Node 22.14.0**; CI uses the same version.
+- **CI must run `npm ci`, never `npm install`.** `npm ci` installs strictly from
+  the lock file and fails if `package.json` and the lock have drifted;
+  `npm install` will quietly _rewrite_ the lock to satisfy a range. Use `npm ci`
+  locally too, unless you are deliberately changing a dependency.
+
+### Secrets in test artifacts
+
+Keeping credentials out of git is only half the problem. Playwright **traces**
+contain `Authorization` headers, cookies and request bodies; **videos** show
+typed form data; the **HTML report** embeds both — and GitHub Actions artifacts
+on a public repository are downloadable. Full analysis:
+**[ADR 0007](docs/adr/0007-secrets-in-test-artifacts.md)**.
+
+Mitigations in place:
+
+| Mitigation                                                                       | Effect                                             |
+| -------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `trace`/`video` at `retain-on-failure`, never `on`                               | Successful runs publish nothing                    |
+| `setup` project runs with `trace: 'off'`, `video: 'off'`                         | The step that submits a password captures no trace |
+| CI artifact `retention-days: 7` _(Phase 7)_                                      | Bounds the exposure window                         |
+| Dedicated **throwaway** accounts, unique strong passwords, no real personal data | Makes a leaked session near-worthless              |
+| `.auth/` git-ignored and never uploaded                                          | The live session never leaves the machine          |
+| Logger redacts `pass\|token\|secret\|authorization\|cookie\|apikey`              | CI logs stay clean                                 |
 
 ---
 
@@ -207,13 +245,13 @@ _Pending — Phase 8._
 
 ## Project phases
 
-| Phase | Scope                                       | Status      |
-| ----- | ------------------------------------------- | ----------- |
-| 1     | Project initialisation & architecture setup | ✅ Complete |
-| 2     | Application & API exploration               | ⏭ Next      |
-| 3     | Story review & PO questions                 | Pending     |
-| 4     | Architecture design sign-off                | Pending     |
-| 5     | Test strategy                               | Pending     |
-| 6     | Implementation                              | Pending     |
-| 7     | CI/CD                                       | Pending     |
-| 8     | Final review                                | Pending     |
+| Phase | Scope                                       | Status                    |
+| ----- | ------------------------------------------- | ------------------------- |
+| 1     | Project initialisation & architecture setup | ✅ Complete (+ hardening) |
+| 2     | Application & API exploration               | ⏭ Next                    |
+| 3     | Story review & PO questions                 | Pending                   |
+| 4     | Architecture design sign-off                | Pending                   |
+| 5     | Test strategy                               | Pending                   |
+| 6     | Implementation                              | Pending                   |
+| 7     | CI/CD                                       | Pending                   |
+| 8     | Final review                                | Pending                   |

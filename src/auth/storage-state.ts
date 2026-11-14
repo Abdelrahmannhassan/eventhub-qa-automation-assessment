@@ -19,9 +19,13 @@ export const ANONYMOUS_STORAGE_STATE: StorageState = { cookies: [], origins: [] 
 
 /**
  * Guarantees the storage-state file exists and is valid JSON before any UI
- * project starts. Phase 2 will replace the anonymous placeholder with a real
- * authenticated session; until then UI projects run anonymously rather than
- * crashing on a missing file.
+ * project starts.
+ *
+ * TODO(Phase 4): this writes a TEMPORARY anonymous placeholder session. It is
+ * scaffolding, not the final behaviour — it exists so the suite runs end to end
+ * before the real authentication mechanism has been observed. Phase 4 replaces
+ * the placeholder with a genuine authenticated session produced by AuthManager.
+ * Until then, UI projects run anonymously rather than crashing on a missing file.
  */
 export async function ensureStorageStateFile(): Promise<void> {
   await fs.mkdir(AUTH_DIR, { recursive: true });

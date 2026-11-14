@@ -51,6 +51,9 @@ export default defineConfig({
 
   use: {
     baseURL: env.baseUrl,
+    // Deliberately `*-on-failure`, never `on`. Traces and videos contain auth
+    // headers, cookies and typed form data, and CI artifacts on a public
+    // repository are downloadable. See docs/adr/0007-secrets-in-test-artifacts.md
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -64,6 +67,12 @@ export default defineConfig({
     {
       name: 'setup',
       testMatch: /tests\/setup\/.*\.setup\.ts/,
+      // The most secret-dense step in the run: a password is submitted and a
+      // token is issued. We capture no trace and no video here so neither can
+      // end up in a downloadable artifact. Failures stay diagnosable through
+      // the redacting logger and a failure screenshot.
+      // See docs/adr/0007-secrets-in-test-artifacts.md
+      use: { trace: 'off', video: 'off' },
     },
 
     // API layer: no browser needed, talks to the API base URL.
