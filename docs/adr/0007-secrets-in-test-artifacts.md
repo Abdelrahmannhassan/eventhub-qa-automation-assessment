@@ -57,10 +57,25 @@ serious one.
 **5. Never publish the live session.**
 `.auth/` is git-ignored and is never uploaded as a CI artifact.
 
-**6. Keep stdout clean.**
-`src/core/logger.ts` redacts `pass|token|secret|authorization|cookie|apikey`
-before anything reaches the console, because CI logs on a public repository are
-world-readable (ADR 0006).
+**6. Keep stdout clean — at two levels.**
+`src/core/logger.ts` redacts both **object keys** matching
+`pass|token|secret|authorization|cookie|apikey` _and_ secret patterns **embedded
+inside strings**.
+
+The second layer exists because of a real leak found while implementing Phase 6a.
+A transient `ECONNRESET` on a cleanup `DELETE` produced a Playwright error whose
+message embedded the entire request call log — including
+`Authorization: Bearer eyJhbGci…` — and the full JWT was printed to stdout.
+Key-based redaction could not see it: the token was part of a _message_, not a
+property.
+
+The scrubber now rewrites, anywhere in free text: bare JWTs
+(`eyJ…`.`…`.`…`), `Bearer <token>`, and `authorization`/`cookie`/`set-cookie`
+header lines. `Error` instances are scrubbed too, since that was the carrier.
+
+The general lesson is worth keeping: **field-level redaction is not enough.**
+Secrets arrive inside error messages, stack traces and third-party call logs, so
+a string-level pass is required, not optional.
 
 ## Alternatives considered
 

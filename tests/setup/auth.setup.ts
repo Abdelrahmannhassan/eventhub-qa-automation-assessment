@@ -1,35 +1,57 @@
-import { test as setup } from '@playwright/test';
+import { test as setup, expect } from '@playwright/test';
 
+import { AuthClient } from '@api/clients';
+import { accountCredentials, allPooledAccountKeys } from '@auth/accounts';
+import { authManager } from '@auth/auth.manager';
 import { config } from '@config/env';
 import { logger } from '@core/logger';
-import { ensureStorageStateFile, USER_STORAGE_STATE } from '@auth/storage-state';
 
 const log = logger.child('setup');
 
 /**
- * Runs once before every other project (see `dependencies` in playwright.config.ts).
+ * Preflight. Runs once before every other project (`dependencies: ['setup']`).
  *
- * Responsibilities:
- *  1. Fail fast on invalid configuration — importing `config` validates it.
- *  2. Produce the storage-state artifact that authenticated UI projects consume.
+ * It deliberately does **not** produce the session the tests use — that is
+ * worker-scoped, because each worker signs in as a different pooled account
+ * (ADR 0008), and a project-level artifact cannot vary per worker.
  *
- * TODO(Phase 4): real session acquisition goes here (register/login against the
- * actual application via AuthManager). The current session artifact is a
- * TEMPORARY anonymous placeholder. It is intentionally not implemented yet: the
- * authentication mechanism is observed in Phase 2, and inventing endpoints
- * before that would be guesswork (CLAUDE.md §1).
+ * What it does instead is fail fast and legibly: if a credential is wrong or the
+ * API is down, you get one clearly named failure here rather than 32 confusing
+ * ones downstream.
  */
-setup('resolve configuration and prepare session artifact', async () => {
-  log.info('Resolved test configuration', {
+setup('API is reachable', async () => {
+  const context = await authManager.createAnonymousApiContext();
+
+  try {
+    const response = await context.get('/api/health');
+    expect(response.status(), 'GET /api/health should be reachable without auth').toBe(200);
+    log.info('API healthy', { body: (await response.json()) as unknown });
+  } finally {
+    await context.dispose();
+  }
+});
+
+setup('every pooled account can authenticate', async () => {
+  log.info('Resolved configuration', {
     environment: config.environment,
     baseUrl: config.baseUrl,
     apiBaseUrl: config.apiBaseUrl,
     isCI: config.isCI,
-    hasAccountA: Boolean(config.accounts.a.email && config.accounts.a.password),
-    hasAccountB: Boolean(config.accounts.b.email && config.accounts.b.password),
   });
 
-  await ensureStorageStateFile();
+  for (const key of allPooledAccountKeys()) {
+    const session = await authManager.signIn(accountCredentials(key));
 
-  log.info('Session artifact ready', { path: USER_STORAGE_STATE });
+    const context = await authManager.createApiContext(session);
+    try {
+      const me = await new AuthClient(context).me();
+      expect(me.data?.user.userId, `account ${key.toUpperCase()} should resolve its identity`).toBe(
+        session.userId,
+      );
+    } finally {
+      await context.dispose();
+    }
+
+    log.info('Account verified', { account: key, userId: session.userId });
+  }
 });

@@ -13,10 +13,44 @@ const SENSITIVE_KEY_PATTERN = /pass(word)?|token|secret|authorization|cookie|api
 
 const REDACTED = '[REDACTED]';
 
+/**
+ * Secrets also appear *inside* strings, not only as object values.
+ *
+ * This was a real leak found in Phase 6a: a failed cleanup produced a Playwright
+ * error whose message embedded the whole request call log — including
+ * `Authorization: Bearer <jwt>`. Key-based redaction cannot see that, because
+ * the token is part of a message, not a property. CI logs on a public repository
+ * are world-readable, so string scrubbing is a required second layer (ADR 0007).
+ */
+const SENSITIVE_STRING_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  // A JWT anywhere in free text.
+  [/eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g, '<jwt redacted>'],
+  // `Authorization: Bearer …` / `Bearer …` as it appears in HTTP call logs.
+  [/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]'],
+  // Header lines for any sensitive header, up to end of line.
+  [/\b(authorization|cookie|set-cookie|x-api-key)(\s*:\s*)[^\r\n]+/gi, `$1$2${REDACTED}`],
+];
+
+/** Scrub secrets that are embedded in a string rather than held in a field. */
+export function redactString(value: string): string {
+  return SENSITIVE_STRING_PATTERNS.reduce(
+    (scrubbed, [pattern, replacement]) => scrubbed.replace(pattern, replacement),
+    value,
+  );
+}
+
 /** Recursively mask sensitive values so tokens and passwords are never logged. */
 export function redact(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return redactString(value);
+  }
+
   if (Array.isArray(value)) {
     return value.map(redact);
+  }
+
+  if (value instanceof Error) {
+    return { name: value.name, message: redactString(value.message) };
   }
 
   if (value !== null && typeof value === 'object') {

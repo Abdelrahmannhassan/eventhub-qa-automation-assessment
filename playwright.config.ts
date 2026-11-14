@@ -1,7 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
 import { config as env } from './src/config/env';
-import { USER_STORAGE_STATE } from './src/auth/storage-state';
 
 /**
  * One config, one test runner, two layers (UI + API) separated by Playwright
@@ -62,8 +61,8 @@ export default defineConfig({
   },
 
   projects: [
-    // Authorization and configuration are framework concerns, resolved here once
-    // per run — never inside an individual test.
+    // Preflight: configuration validity, API reachability and that every pooled
+    // account can authenticate. One legible failure instead of 32 confusing ones.
     {
       name: 'setup',
       testMatch: /tests\/setup\/.*\.setup\.ts/,
@@ -83,20 +82,23 @@ export default defineConfig({
       use: { baseURL: env.apiBaseUrl },
     },
 
-    // UI layer: starts from the session produced by `setup`.
+    // UI layer. Authentication is NOT configured here: `storageState` is a
+    // test-scoped option, so it cannot vary per worker from a project. The
+    // fixture layer overrides it from a worker-scoped session instead, which is
+    // what lets each worker act as its own pooled account (ADR 0004 / 0008).
     {
       name: 'ui-chromium',
       testMatch: /tests\/ui\/.*\.spec\.ts/,
       dependencies: ['setup'],
-      use: { ...devices['Desktop Chrome'], storageState: USER_STORAGE_STATE },
+      use: { ...devices['Desktop Chrome'] },
     },
 
-    // Cross-layer journeys (e.g. book via UI, verify via API).
+    // Cross-layer journeys (e.g. book via API, verify in the UI).
     {
       name: 'e2e-chromium',
       testMatch: /tests\/e2e\/.*\.spec\.ts/,
       dependencies: ['setup'],
-      use: { ...devices['Desktop Chrome'], storageState: USER_STORAGE_STATE },
+      use: { ...devices['Desktop Chrome'] },
     },
   ],
 });

@@ -1,13 +1,6 @@
 # ADR 0004 — Authorization is owned by the framework, never by a test
 
-**Status:** Accepted as a design (Phase 1). Implementation lands in **Phase 4**,
-once Phase 2 has observed the real authentication mechanism.
-
-> **The session artifact shipped in Phase 1 is a TEMPORARY anonymous
-> placeholder** (`TODO(Phase 4)` in `src/auth/storage-state.ts` and
-> `tests/setup/auth.setup.ts`). It exists only so the suite runs end to end
-> before the auth mechanism is known, and is replaced by a real
-> `AuthManager`-produced session in Phase 4.
+**Status:** Accepted (Phase 1) · **implemented in Phase 6a**.
 
 ## Context
 
@@ -41,6 +34,27 @@ Credentials reach `AuthManager` only through the validated config object
 (ADR 0006), and the logger redacts tokens and passwords (`src/core/logger.ts`).
 The accounts themselves are disposable and uniquely credentialled, because the
 session they produce can surface in test artifacts (ADR 0007).
+
+## Refinement made during implementation
+
+The Phase 1 design had the **`setup` project** produce the session artifact that
+UI projects consume via `use: { storageState }`. Implementation showed that this
+cannot work alongside per-worker accounts (ADR 0008), for a concrete reason:
+**`storageState` is a _test-scoped_ Playwright option**, so a value written once
+by a project cannot vary per worker.
+
+So the responsibility split moved:
+
+- The **`setup` project** became a **preflight**: it asserts the API is reachable
+  and that _every pooled account_ can authenticate. Its value is fail-fast
+  diagnosis — one clearly named failure instead of 32 confusing ones when a
+  credential is wrong.
+- A **worker-scoped fixture** acquires the session (one sign-in per worker) and
+  writes `.auth/worker-<index>.json`. A test-scoped `storageState` fixture then
+  derives from it, which is the only way the option can vary by worker.
+
+This is Playwright's documented pattern for authenticating multiple roles in
+parallel, and it keeps the ADR's actual requirement intact: **no test logs in.**
 
 ## Alternatives considered
 

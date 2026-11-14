@@ -3,14 +3,15 @@ import path from 'node:path';
 
 import type { BrowserContextOptions } from '@playwright/test';
 
+import { config } from '@config/env';
+
+import type { Session } from './auth.manager';
+
 /**
- * Where authenticated session artifacts live. Git-ignored: these files contain
- * real session cookies and must never be committed.
+ * Where authenticated session artifacts live. Git-ignored: these files contain a
+ * real JWT and must never be committed, nor uploaded as a CI artifact (ADR 0007).
  */
 export const AUTH_DIR = path.resolve(process.cwd(), '.auth');
-
-/** Storage state consumed by every authenticated UI project (see playwright.config.ts). */
-export const USER_STORAGE_STATE = path.join(AUTH_DIR, 'user.json');
 
 type StorageState = NonNullable<Exclude<BrowserContextOptions['storageState'], string>>;
 
@@ -18,27 +19,37 @@ type StorageState = NonNullable<Exclude<BrowserContextOptions['storageState'], s
 export const ANONYMOUS_STORAGE_STATE: StorageState = { cookies: [], origins: [] };
 
 /**
- * Guarantees the storage-state file exists and is valid JSON before any UI
- * project starts.
- *
- * TODO(Phase 4): this writes a TEMPORARY anonymous placeholder session. It is
- * scaffolding, not the final behaviour — it exists so the suite runs end to end
- * before the real authentication mechanism has been observed. Phase 4 replaces
- * the placeholder with a genuine authenticated session produced by AuthManager.
- * Until then, UI projects run anonymously rather than crashing on a missing file.
+ * The localStorage key the web application reads its JWT from. Observed in
+ * Phase 2 — the app uses no cookie session at all, which is why injecting
+ * storage state is sufficient to sign the browser in.
  */
-export async function ensureStorageStateFile(): Promise<void> {
-  await fs.mkdir(AUTH_DIR, { recursive: true });
+export const TOKEN_STORAGE_KEY = 'eventhub_token';
 
-  try {
-    const existing = await fs.readFile(USER_STORAGE_STATE, 'utf-8');
-    JSON.parse(existing) as StorageState;
-  } catch {
-    await writeStorageState(ANONYMOUS_STORAGE_STATE);
-  }
+/** One file per worker, because each worker signs in as a different account. */
+export function storageStatePathFor(workerIndex: number): string {
+  return path.join(AUTH_DIR, `worker-${workerIndex}.json`);
 }
 
-export async function writeStorageState(state: StorageState): Promise<void> {
-  await fs.mkdir(AUTH_DIR, { recursive: true });
-  await fs.writeFile(USER_STORAGE_STATE, JSON.stringify(state, null, 2), 'utf-8');
+/**
+ * Turns a session into a browser session, with no browser involved.
+ *
+ * This is the whole trick behind "authorization is handled by the framework":
+ * the token obtained over HTTP is written where the application expects to find
+ * it, so every UI test opens an already-signed-in browser.
+ */
+export function buildStorageState(session: Session): StorageState {
+  return {
+    cookies: [],
+    origins: [
+      {
+        origin: config.baseUrl,
+        localStorage: [{ name: TOKEN_STORAGE_KEY, value: session.token }],
+      },
+    ],
+  };
+}
+
+export async function writeStorageState(filePath: string, state: StorageState): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(state, null, 2), 'utf-8');
 }

@@ -84,6 +84,20 @@ Angeles` ($2,500), `283 World Tech Summit`.
 | `DELETE /bookings/{id}`   | yes                   | yes                      | hard delete, restores seats                                                                                          |
 | **`DELETE /bookings`**    | **NO — undocumented** | yes                      | **Bulk "clear all". Used by the UI's "Clear all bookings" button; returns `200 {"message":"3 booking(s) cleared"}`** |
 
+### Response envelopes (verified for every endpoint)
+
+| Endpoint                                                              | Top-level keys                   |
+| --------------------------------------------------------------------- | -------------------------------- |
+| `POST /events` · `POST /bookings`                                     | `success`, `data`, **`message`** |
+| `GET /events/{id}` · `GET /bookings/{id}` · `GET /bookings/ref/{ref}` | `success`, `data`                |
+| `GET /events` · `GET /bookings`                                       | `success`, `data`, `pagination`  |
+| `DELETE /events/{id}` · `DELETE /bookings/{id}`                       | `success`, `message`             |
+
+The `message` on the two create endpoints (`"Event created successfully"`,
+`"Booking confirmed!"`) is absent from the GET envelopes — a detail the strict
+Zod contracts caught during Phase 6a, after an earlier probe had printed only the
+`data` member.
+
 ## 4. `POST /bookings` — the real contract
 
 **Request** (exactly what the UI sends, captured from the network):

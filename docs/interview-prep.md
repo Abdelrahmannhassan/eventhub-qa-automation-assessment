@@ -489,3 +489,85 @@ environment, but doing it here would degrade other people's work.
 
 The same reasoning kept rate-limit probing out of Phase 2, and it is why CI caps
 itself at 2 workers.
+
+---
+
+## Phase 6a — Framework implementation
+
+### Q: Your strict Zod contracts failed on the first run. Wasn't that a waste?
+
+The opposite — that failure is the argument for them.
+
+`POST /events` returns `{ success, data, message }`. My Phase 2 probe had printed
+only the `data` member, so I had modelled the envelope without `message`, and the
+strict schema rejected it with `Unrecognized key: "message"` on the very first
+run.
+
+A permissive schema would have silently stripped the unknown key and the suite
+would have gone green while my model of the API was wrong. Instead I got a
+precise, one-line diagnosis, went back and captured the exact envelope for all
+nine endpoints, and recorded the table in `api-findings.md`.
+
+That is what runtime contract validation is _for_: it catches the gap between
+what you believe the API returns and what it actually returns — including when
+the wrong belief is your own.
+
+### Q: Tell me about a bug you found in your own framework.
+
+Two, both on the shared environment, and both worth fixing properly.
+
+**A resource leak.** When the contract violation above was thrown, the event had
+already been created server-side (`201`). But the client threw _before returning_,
+so the `tracker.track(...)` line that followed never executed — and four orphan
+events were left on someone else's server. Cleanup was correct; the _registration_
+was unreachable on the failure path.
+
+The fix changed the shape of the result rather than patching the call site:
+`ApiResult` now always exposes `status` and `body` safely, and only touching
+`.data` can throw. A `TestResources` helper registers cleanup **from the raw
+body, before anything can throw**. That removes the whole class of failure
+instead of one instance of it.
+
+**A JWT in the logs.** A transient `ECONNRESET` on a cleanup `DELETE` produced a
+Playwright error whose message embedded the full request call log — including
+`Authorization: Bearer eyJhbGci…`. My logger redacted sensitive object _keys_,
+but this token was inside a message string, so it printed in full. On a public
+repository, CI logs are world-readable.
+
+The fix added string-level scrubbing for bare JWTs, `Bearer <token>` and
+sensitive header lines, including inside `Error` instances, and I verified it
+against the exact string that leaked. The general lesson is the useful part:
+**field-level redaction is not enough — secrets arrive inside error messages,
+stack traces and third-party call logs.**
+
+### Q: You said no retries, but your cleanup retries once. Explain.
+
+The ban is on retries that hide information. A test retry can turn a real defect
+or a real flaky test into a green tick, which destroys the signal.
+
+Cleanup retries cannot do that: teardown runs after the verdict is already
+decided. The retry exists because the shared server produced a genuine transient
+`ECONNRESET` on a `DELETE`, and an undeleted booking is litter on infrastructure
+we do not own. A failure after the retry is still surfaced as a test annotation,
+never swallowed.
+
+The one-line version: **retrying a test hides information; retrying a delete
+reduces litter.**
+
+### Q: Why is the session worker-scoped rather than produced by the setup project?
+
+Because `storageState` is a **test-scoped** Playwright option, and per-worker
+accounts (ADR 0008) require it to vary by worker. A file written once by a
+project cannot do that.
+
+So the session is acquired in a worker-scoped fixture — one sign-in per worker —
+and a test-scoped `storageState` fixture derives from it. This is Playwright's
+documented pattern for running multiple authenticated roles in parallel.
+
+The `setup` project did not disappear; it changed job. It is now a preflight that
+asserts the API is reachable and that every pooled account can authenticate. When
+a credential is wrong you get one failure named "every pooled account can
+authenticate" rather than 32 downstream failures that all look like product bugs.
+
+I would volunteer this as a design that _changed_ during implementation, because
+the original ADR said otherwise — and the ADR now records why.

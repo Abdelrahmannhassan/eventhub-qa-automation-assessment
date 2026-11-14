@@ -37,6 +37,19 @@ data per test (ADR 0002) so parallel execution cannot be the cause of flakiness.
 On failure we keep `trace`, `screenshot` and `video` (`retain-on-failure`), so a
 single CI failure is diagnosable without reproducing it locally.
 
+## The one retry that exists, and why it is not a contradiction
+
+`ResourceTracker` retries each **cleanup** operation once.
+
+This cannot make an assertion pass: teardown runs after the verdict is already
+decided. It was added because the shared environment produced a genuine transient
+`ECONNRESET` on a `DELETE` during Phase 6a, and an undeleted booking is litter on
+a server we do not own. A failure after the retry is still reported through a
+test annotation, never swallowed.
+
+The distinction to hold onto: **retrying a test hides information; retrying a
+delete reduces litter.** Only the former is banned here.
+
 ## Alternatives considered
 
 **`retries: 1` on CI only** — the common industry default. It is defensible for

@@ -61,6 +61,17 @@ export default tseslint.config(
   },
 
   {
+    // Playwright resolves a fixture's dependencies by parsing its first
+    // parameter, so a fixture with no dependencies MUST be written `({}, use)`.
+    // A named parameter fails at runtime with "First argument must use the
+    // object destructuring pattern". The rule is simply wrong for this file.
+    files: ['src/fixtures/**/*.ts'],
+    rules: {
+      'no-empty-pattern': 'off',
+    },
+  },
+
+  {
     // Setup projects are framework infrastructure expressed through the test
     // runner, not tests. They legitimately assert nothing: their contract is
     // "produce the session artifact or fail loudly". Every other test file is

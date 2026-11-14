@@ -5,12 +5,11 @@ built with **Playwright + TypeScript**.
 
 Scope: user story **US-114 — Book tickets for an event** (AC1–AC5).
 
-> **Status: Phase 1 of 8 complete — project initialisation.**
-> The framework skeleton, toolchain, configuration, authorization design, quality
-> gates and decision records are in place. Page Objects, API clients and tests are
-> intentionally **not** written yet: the application and its API have not been
-> explored, and this project does not commit guessed locators or endpoints
-> (see `CLAUDE.md` §1). Sections marked _Pending_ below are filled in by later phases.
+> **Status: Phase 6a of 8 — framework built, 3 smoke tests green.**
+> The framework is implemented end to end (Zod contracts, API clients,
+> `AuthManager`, fixtures, factories, Page Objects, cleanup) and proven by three
+> passing smoke tests covering AC1 at the API, AC1 in the UI, and AC5 across both.
+> The remaining 29 tests land in Phase 6b; CI is Phase 7.
 
 ---
 
@@ -130,11 +129,17 @@ this explicitly). Design and trade-offs: **[ADR 0004](docs/adr/0004-centralised-
 5. A test that must be anonymous opts out visibly with
    `test.use({ storageState: ANONYMOUS_STORAGE_STATE })`.
 
-> **Phase 1 ships the wiring plus a TEMPORARY anonymous placeholder session**
-> (marked `TODO(Phase 4)` in `src/auth/storage-state.ts` and
-> `tests/setup/auth.setup.ts`). It exists only so the suite runs end to end
-> before the auth mechanism is known. Phase 2 observes the real mechanism;
-> Phase 4 replaces the placeholder with a genuine `AuthManager` session.
+**Implemented in Phase 6a.** One HTTP sign-in per worker produces a JWT that is
+written into `localStorage.eventhub_token` inside a Playwright storage-state file
+— so the browser opens already authenticated — and into an `APIRequestContext`
+`Authorization` header for API tests. **No test and no browser ever logs in.**
+
+One implementation detail worth knowing: `storageState` is a _test-scoped_
+Playwright option, so it cannot vary per worker from project config. The session
+is therefore worker-scoped in the fixture layer, and the `setup` project is a
+**preflight** that asserts the API is reachable and every pooled account can
+authenticate — one legible failure instead of 32 confusing ones
+([ADR 0004](docs/adr/0004-centralised-authorization.md)).
 
 ---
 

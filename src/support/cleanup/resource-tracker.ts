@@ -30,24 +30,57 @@ export class ResourceTracker {
     return this.tasks.length;
   }
 
+  /**
+   * One retry, and only for cleanup.
+   *
+   * This is **not** a test retry and does not contradict ADR 0005: it cannot make
+   * an assertion pass, because teardown runs after the verdict is decided. It
+   * exists because the shared environment produced a real transient
+   * `ECONNRESET` on a `DELETE` during Phase 6a, and an un-deleted booking is
+   * litter on a server we do not own. A failure after the retry is still
+   * reported, never swallowed.
+   */
+  private async removeWithOneRetry(
+    label: string,
+    remove: () => Promise<void>,
+  ): Promise<string | undefined> {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await remove();
+        this.log.debug('Cleaned up resource', { label, attempt });
+        return undefined;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        if (attempt === 2) {
+          return message;
+        }
+
+        this.log.debug('Cleanup attempt failed; retrying once', { label, error: message });
+      }
+    }
+
+    return undefined;
+  }
+
   /** Remove every tracked resource. Safe to call more than once. */
   async cleanupAll(): Promise<CleanupResult[]> {
     const pending = this.tasks.splice(0).reverse();
     const results: CleanupResult[] = [];
 
     for (const { label, remove } of pending) {
-      try {
-        await remove();
+      const error = await this.removeWithOneRetry(label, remove);
+
+      if (error === undefined) {
         results.push({ label, status: 'succeeded' });
-        this.log.debug('Cleaned up resource', { label });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        results.push({ label, status: 'failed', error: message });
-        this.log.warn('Failed to clean up resource — manual removal may be required', {
-          label,
-          error: message,
-        });
+        continue;
       }
+
+      results.push({ label, status: 'failed', error });
+      this.log.warn('Failed to clean up resource — manual removal may be required', {
+        label,
+        error,
+      });
     }
 
     return results;

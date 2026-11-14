@@ -39,6 +39,10 @@ const envSchema = z.object({
   TEST_USER_A_PASSWORD: optionalString,
   TEST_USER_B_EMAIL: optionalString,
   TEST_USER_B_PASSWORD: optionalString,
+  // Account C is the "foreign" actor: it only ever attempts unauthorized access,
+  // so it creates nothing and every worker can share it safely (ADR 0008).
+  TEST_USER_C_EMAIL: optionalString,
+  TEST_USER_C_PASSWORD: optionalString,
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
 });
 
@@ -73,6 +77,7 @@ export const config = {
   accounts: {
     a: { email: raw.TEST_USER_A_EMAIL, password: raw.TEST_USER_A_PASSWORD },
     b: { email: raw.TEST_USER_B_EMAIL, password: raw.TEST_USER_B_PASSWORD },
+    c: { email: raw.TEST_USER_C_EMAIL, password: raw.TEST_USER_C_PASSWORD },
   },
 } as const;
 
