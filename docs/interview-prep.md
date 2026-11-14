@@ -241,3 +241,86 @@ Worth saying out loud: the environment showed clear signs of other candidates
 working in parallel — event 285's `availableSeats` dropped from 28 while the
 session was running. That is precisely why the framework creates its own events
 rather than asserting against shared inventory.
+
+---
+
+## Phase 3 — Story review
+
+### Q: What is the most important thing you found reviewing US-114?
+
+That **the actor is wrong**, and that this is not a wording problem.
+
+The story says _"As a visitor to EventHub I want to book tickets"_. There is no
+visitor flow: `/` and `/events` redirect to `/login`, and `POST /api/bookings`
+returns `401`. The story also contains no registration or login step, so as
+written it cannot be implemented.
+
+Why it matters more than the other findings: it changes **who the feature is
+for**, and it decides whether AC1 and AC5 describe a defect in the product or a
+defect in the story. Those two readings produce opposite test suites. One says
+"authenticate, then book"; the other says "anonymous booking must work, and today
+it returns 401, so these tests should fail". That is a Product Owner's call.
+
+### Q: The application passes all five ACs. So was the review worth doing?
+
+That is exactly the point worth making. **The product is mostly fine; the
+specification is not.** All five ACs pass end to end — and three of the five are
+not testable as written:
+
+- AC5's _"the same works"_ does not say same _what_, and `POST /api/bookings`
+  alone cannot satisfy AC3 or AC4 — those need `GET /bookings` and
+  `DELETE /bookings/{id}`, which AC5 never names.
+- AC3's _"appears in My Bookings"_ does not say what must appear, or how fast.
+- AC4's _"I can cancel"_ never says what cancelling _does_. The most valuable
+  behaviour — seats returning to the event — is required by no AC at all.
+
+A suite built from this story would pass while testing almost nothing. Reviewing
+the story is how you find that _before_ writing 40 tests.
+
+### Q: Give an example of a gap a reader would not notice.
+
+**Who owns a booking.** The booking is tied to the authenticated account
+(`userId`), while `customerName`/`customerEmail`/`customerPhone` are free text.
+During exploration, account A booked using an unrelated email — and that person
+can see nothing: the booking appears only in A's "My Bookings".
+
+So AC1's _"my booking is created"_ is ambiguous: created for the buyer, or for
+the attendee? If booking on someone's behalf is intended, there is a missing
+requirement about the attendee's access. If it is not intended, there is a
+missing validation rule. Either way the story does not say, and the product
+quietly picked one.
+
+The second example: **payment does not exist**. Not in the form, not in
+`POST /bookings`. A story about buying tickets with no payment step is either a
+deliberate reserve-now-pay-later model or a major omission — and nobody wrote
+down which.
+
+### Q: You raised 13 questions. Isn't that just blocking the work?
+
+No — the review ships with **8 written assumptions**, each with its blast radius
+if wrong. That is the difference between raising questions and hiding behind
+them.
+
+Example: A1 assumes "visitor" means "registered user", so the tests
+authenticate. If the PO says anonymous booking really is required, AC1/AC5
+become product defects and the suite needs tests that document the gap. The
+assumption is cheap to reverse because it is isolated in the auth layer, and it
+is written down so nobody mistakes it for a verified fact.
+
+A2 is the same shape: the booking reference is asserted as
+`^[A-Z]-[A-Z0-9]{6}$` — what the application actually produces — while the
+documented `EVT-XXXXXX` is reported as a documentation defect. The alternative
+would have been to assert the documented format, fail, and call a documentation
+error a product bug.
+
+### Q: Would you have rewritten the story for a real Product Owner?
+
+Yes, and the review includes a draft — but framed as input to refinement, not as
+a decision already made. Three things change in it: the actor becomes
+"registered user", every AC names an **observable outcome** (including the seat
+count, which the original never mentions), and the genuinely open decisions —
+retention on cancel, cancellation deadline, reference format, currency — are
+marked **TBD with a question reference** instead of being invented.
+
+Marking something TBD in a story is honest. Silently inventing it is how a test
+suite ends up enforcing a rule nobody agreed to.

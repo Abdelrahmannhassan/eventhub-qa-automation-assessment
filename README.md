@@ -83,7 +83,7 @@ layering. Full reasoning for every choice is in **[`docs/adr/`](docs/adr/)**.
 │
 ├── docs/
 │   ├── adr/                      Architecture Decision Records
-│   ├── story-review.md           US-114 review + PO questions        (Phase 3)
+│   ├── story-review.md           US-114 review + PO questions        ✅
 │   ├── api-findings.md           Observed API surface & discrepancies ✅
 │   ├── test-strategy.md          Coverage, priorities, layer choice   (Phase 5)
 │   └── interview-prep.md         Decision defence notes
@@ -244,8 +244,33 @@ with evidence. Headlines:
 
 ## Story review — US-114
 
-_Pending — Phase 3._ Will turn the findings above into the story review proper:
-what is missing, unclear or wrong in US-114, and the questions for the Product Owner.
+**[`docs/story-review.md`](docs/story-review.md)** — the full review. Summary:
+
+The application largely works — **all five acceptance criteria pass end to end**.
+The problem is that US-114 is not a usable specification.
+
+|                                         |        |
+| --------------------------------------- | ------ |
+| Statements that are factually **wrong** | 2      |
+| ACs **not testable as written**         | 3 of 5 |
+| **Missing** requirements                | 17     |
+| **Questions** for the Product Owner     | 13     |
+
+The biggest issue is the **actor**: the story is written for a "visitor", and no
+visitor flow exists — `/events` redirects to `/login` and `POST /api/bookings`
+returns `401`. That decides whether AC1/AC5 are product defects or story defects,
+so it is a Product Owner question, not something QA should quietly assume.
+
+The three gaps that matter most after that: **payment does not exist anywhere**
+in the story or the product; **who owns a booking** is ambiguous (the account, or
+the person whose email was typed into the form — they are not the same, and the
+latter can see nothing); and **"the same works through the API"** in AC5 points at
+an OpenAPI document that disagrees with the running API in 15 places.
+
+The review also records **8 explicit assumptions** the automation encodes until
+the PO answers, each with its impact if wrong, plus a suggested rewrite that
+splits the story in two and marks the genuinely open decisions as TBD rather than
+inventing them.
 
 ## Test strategy
 
