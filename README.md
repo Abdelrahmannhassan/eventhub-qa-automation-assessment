@@ -388,16 +388,43 @@ _Pending — Phase 7._ GitHub Actions on every push, with published reports.
 
 ### Known limitations
 
-**1. Residual intermittent failures against the shared host.** Recent local gate
-runs: **12/14 green**. The two failures were a sign-in failure and an unexpected
-status on an unauthenticated read — both transport-shaped, **never assertion
-logic**. I could not reproduce either with direct HTTP under equivalent load
-(120/120 requests correct, 20/20 unauthenticated reads correctly `401`). Three
-causes were found and fixed properly along the way — stale pooled connections,
-an action-timeout used for page readiness, and an arbitrary navigation timeout —
-but the residue is **not root-caused**, and it is deliberately **not masked with
-retries** (ADR 0005). If this were a service we owned, the next step is HAR
-capture on failure plus correlation IDs matched against the provider's logs.
+**1. Residual intermittent failures when run locally — but not in CI.**
+
+CI is **green on every run** (39/39, the gate). Locally the same commit varies
+with network conditions:
+
+| Conditions                  | Local gate result |
+| --------------------------- | ----------------- |
+| Network healthy             | 12/14, then 2/3   |
+| During a network disruption | 0/4               |
+
+**Partially root-caused.** One failure surfaced as
+`connect ENETUNREACH ::` **after 215 ms** — not a timeout but an immediate
+"network unreachable", which is unambiguous evidence of transient local
+connectivity loss rather than a server or framework fault. During that window
+even the `/api/health` preflight failed; once connectivity settled, 40/40 direct
+requests and 12/12 Playwright contexts succeeded with no anomalies, and the gate
+passed again.
+
+Supporting evidence that the server is not at fault: direct HTTP to the API is
+consistently fast (login p50 224 ms, p90 497 ms over 15 samples, zero over 5 s),
+and GitHub's runners — a different network entirely — have never reproduced it.
+
+What remains unexplained is why a stall sometimes manifests as a **30 s
+`apiRequestContext` timeout** rather than an immediate `ENETUNREACH`. The likely
+mechanism is a connection established just before connectivity drops, left
+waiting for a response that never arrives. Confirming that needs packet-level
+capture correlated with the failure, which I have not done.
+
+Three contributing causes _were_ found and properly fixed: stale pooled
+connections, an action timeout misapplied to page readiness, and an arbitrary
+navigation ceiling. Nothing is masked with retries (ADR 0005) — so a local
+network blip fails the run loudly, which is the intended behaviour even though it
+is inconvenient.
+
+**Practical consequence for a reviewer:** trust CI. If a local run fails on a
+timeout or `ENETUNREACH`, re-run it — and if it fails on an _assertion_, that is
+a real finding worth reporting.
 
 **2. The overselling defect is open.** It is quarantined and reported on every
 run (ADR 0010), not fixed — that needs a product change.
@@ -429,9 +456,10 @@ or required checks.
 
 ### What I would do next, in priority order
 
-1. **Root-cause the residual flakiness** — HAR on failure, correlation IDs, and a
-   long soak run to characterise it. Right now I can describe it but not explain
-   it, and that is the single weakest claim in this repository.
+1. **Finish root-causing the residual local flakiness.** Transient connectivity
+   loss is now evidenced (`ENETUNREACH` in 215 ms), but the 30 s timeout variant
+   is not yet explained. Next step is packet capture plus correlation IDs matched
+   against the failure, not more timeout tuning.
 2. **Persist Allure history** to a `gh-pages` branch, unlocking the trend and
    flakiness view that justified Allure in the first place.
 3. **Answer the PO questions** and convert the 8 assumptions into real
